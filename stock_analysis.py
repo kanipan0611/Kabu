@@ -17,6 +17,22 @@ def fetch_dividends(ticker: str) -> pd.Series:
     return yf.Ticker(ticker).dividends
 
 
+@st.cache_data(ttl=60 * 30, show_spinner=False)
+def fetch_fundamentals(ticker: str) -> dict:
+    """yfinanceからPER・PBR・ROEを自動取得する（最終的な評価・判断は自分で行う）。"""
+    try:
+        info = yf.Ticker(ticker).info
+    except Exception:
+        return {"per": None, "pbr": None, "roe": None}
+
+    roe = info.get("returnOnEquity")
+    return {
+        "per": info.get("trailingPE"),
+        "pbr": info.get("priceToBook"),
+        "roe": roe * 100 if roe is not None else None,
+    }
+
+
 def calculate_trailing_dividend_yield(ticker: str) -> dict:
     """直近1年間の配当合計と、現在株価から算出した配当利回り(%)を返す。"""
     try:
@@ -194,19 +210,24 @@ def render_single_stock_panel(
         st.caption(dividend_hint(div_info["yield_pct"]))
 
     if show_fundamentals:
-        st.markdown("**📋 財務指標（手入力・比較用）**")
+        st.markdown("**📋 財務指標（自動取得・比較用）**")
+        auto = fetch_fundamentals(ticker)
+        st.caption("初期値はyfinanceからの自動取得値です。気になる場合は書き換えて構いません。")
         c1, c2, c3 = st.columns(3)
         with c1:
             result["per"] = st.number_input(
-                "PER（倍）", min_value=0.0, value=0.0, step=0.1, key=f"{key_prefix}_per"
+                "PER（倍）", min_value=0.0, value=float(auto["per"] or 0.0), step=0.1,
+                key=f"{key_prefix}_per_{ticker}",
             )
         with c2:
             result["pbr"] = st.number_input(
-                "PBR（倍）", min_value=0.0, value=0.0, step=0.1, key=f"{key_prefix}_pbr"
+                "PBR（倍）", min_value=0.0, value=float(auto["pbr"] or 0.0), step=0.1,
+                key=f"{key_prefix}_pbr_{ticker}",
             )
         with c3:
             result["roe"] = st.number_input(
-                "ROE（%）", min_value=0.0, value=0.0, step=0.1, key=f"{key_prefix}_roe"
+                "ROE（%）", min_value=0.0, value=float(auto["roe"] or 0.0), step=0.1,
+                key=f"{key_prefix}_roe_{ticker}",
             )
 
     return result

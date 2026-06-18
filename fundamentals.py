@@ -5,6 +5,7 @@ import os
 import streamlit as st
 
 from notes_store import get_notes, get_notion_config, save_note
+from stock_analysis import fetch_fundamentals
 
 PER_THRESHOLDS = (15, 25)
 PBR_THRESHOLDS = (1, 3)
@@ -74,13 +75,25 @@ def render_fundamentals_section(default_ticker: str = "7203.T") -> None:
 
     ticker = st.text_input("対象銘柄コード", value=default_ticker, key="fund_ticker")
 
+    auto = fetch_fundamentals(ticker) if ticker else {"per": None, "pbr": None, "roe": None}
+    st.caption("PER・PBR・ROEはyfinanceからの自動取得値を初期値として表示します。最終的な評価は自分で判断し、必要なら書き換えてください。")
+
     col1, col2, col3 = st.columns(3)
     with col1:
-        per = st.number_input("PER（倍）", min_value=0.0, value=0.0, step=0.1, format="%.1f")
+        per = st.number_input(
+            "PER（倍）", min_value=0.0, value=float(auto["per"] or 0.0), step=0.1, format="%.1f",
+            key=f"fund_per_{ticker}",
+        )
     with col2:
-        pbr = st.number_input("PBR（倍）", min_value=0.0, value=0.0, step=0.1, format="%.2f")
+        pbr = st.number_input(
+            "PBR（倍）", min_value=0.0, value=float(auto["pbr"] or 0.0), step=0.1, format="%.2f",
+            key=f"fund_pbr_{ticker}",
+        )
     with col3:
-        roe = st.number_input("ROE（%）", min_value=0.0, value=0.0, step=0.1, format="%.1f")
+        roe = st.number_input(
+            "ROE（%）", min_value=0.0, value=float(auto["roe"] or 0.0), step=0.1, format="%.1f",
+            key=f"fund_roe_{ticker}",
+        )
 
     memo = st.text_area("分析メモ（なぜこの株に注目したか）", height=120, key="memo_input")
 

@@ -9,7 +9,7 @@ from stock_analysis import calculate_trailing_dividend_yield
 ASSET_CATEGORIES = ["現金", "インデックス投信", "個別株"]
 ASSET_COLORS = ["#8FBC8F", "#4682B4", "#DAA520"]
 
-DEFAULT_HOLDINGS = pd.DataFrame([{"銘柄コード": "7203.T", "株数": 0}])
+DEFAULT_HOLDINGS = pd.DataFrame([{"銘柄コード": "7203.T", "株数": 0, "購入単価": 0.0}])
 
 
 def render_portfolio_section() -> None:
@@ -54,15 +54,16 @@ def render_portfolio_section() -> None:
     df["割合"] = (df["金額（円）"] / total * 100).round(1).astype(str) + "%"
     st.dataframe(df, hide_index=True, use_container_width=True)
 
-    render_dividend_summary()
+    render_holdings_summary()
 
 
-def render_dividend_summary() -> None:
+def render_holdings_summary() -> None:
     st.markdown("---")
-    st.subheader("💴 保有個別株の配当チェック（自動取得）")
+    st.subheader("💴 保有個別株の配当・損益チェック（自動取得）")
     st.caption(
-        "保有している個別株の銘柄コードと株数を入力すると、各銘柄の配当利回りをyfinanceから取得し、"
+        "保有している個別株の銘柄コード・株数を入力すると、各銘柄の配当利回りをyfinanceから取得し、"
         "ポートフォリオ全体の年間想定配当額をまとめて確認できます。"
+        "購入単価も入力すると、購入時からの値動き（損益）も合わせて確認できます（未入力の銘柄は損益計算をスキップします）。"
     )
 
     holdings_df = st.data_editor(
@@ -73,15 +74,22 @@ def render_dividend_summary() -> None:
         column_config={
             "銘柄コード": st.column_config.TextColumn(required=True),
             "株数": st.column_config.NumberColumn(min_value=0, step=1, required=True),
+            "購入単価": st.column_config.NumberColumn(
+                min_value=0.0, step=1.0, help="購入時の1株あたりの価格（円）。任意項目です。"
+            ),
         },
     )
 
     rows = []
     total_annual_dividend = 0.0
     total_value = 0.0
+    total_cost = 0.0
+    total_pl = 0.0
+    has_cost_basis = False
     for _, holding in holdings_df.iterrows():
         ticker = str(holding.get("銘柄コード") or "").strip()
         shares = holding.get("株数") or 0
+        purchase_price = holding.get("購入単価") or 0
         if not ticker or shares <= 0:
             continue
 
@@ -93,18 +101,31 @@ def render_dividend_summary() -> None:
         value = info["price"] * shares
         total_annual_dividend += annual_dividend
         total_value += value
-        rows.append(
-            {
-                "銘柄コード": ticker,
-                "株数": shares,
-                "現在値": round(info["price"], 1),
-                "配当利回り(%)": round(info["yield_pct"], 2) if info["yield_pct"] is not None else None,
-                "年間想定配当額": round(annual_dividend, 0),
-            }
-        )
+
+        row = {
+            "銘柄コード": ticker,
+            "株数": shares,
+            "購入単価": purchase_price if purchase_price > 0 else None,
+            "現在値": round(info["price"], 1),
+            "損益(円)": None,
+            "損益(%)": None,
+            "配当利回り(%)": round(info["yield_pct"], 2) if info["yield_pct"] is not None else None,
+            "年間想定配当額": round(annual_dividend, 0),
+        }
+
+        if purchase_price > 0:
+            has_cost_basis = True
+            cost = purchase_price * shares
+            pl_total = value - cost
+            total_cost += cost
+            total_pl += pl_total
+            row["損益(円)"] = round(pl_total, 0)
+            row["損益(%)"] = round((info["price"] - purchase_price) / purchase_price * 100, 2)
+
+        rows.append(row)
 
     if not rows:
-        st.caption("銘柄コードと株数を入力すると、配当の見積もりが表示されます。")
+        st.caption("銘柄コードと株数を入力すると、配当・損益の見積もりが表示されます。")
         return
 
     st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
@@ -115,3 +136,11 @@ def render_dividend_summary() -> None:
     with col2:
         avg_yield = (total_annual_dividend / total_value * 100) if total_value else 0
         st.metric("加重平均配当利回り", f"{avg_yield:.2f}%")
+
+    if has_cost_basis:
+        col3, col4 = st.columns(2)
+        with col3:
+            pl_pct = (total_pl / total_cost * 100) if total_cost else 0
+            st.metric("保有株の損益合計（購入単価入力分）", f"{total_pl:,.0f} 円", delta=f"{pl_pct:.2f}%")
+        with col4:
+            st.metric("購入額合計 → 現在評価額", f"{total_cost:,.0f} 円 → {total_cost + total_pl:,.0f} 円")
