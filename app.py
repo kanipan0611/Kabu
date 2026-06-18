@@ -16,6 +16,11 @@ from stock_analysis import render_stock_section
 
 st.set_page_config(page_title="Nest Egg — 投資学習ダッシュボード", page_icon="🥚", layout="wide")
 
+st.markdown(
+    '<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">',
+    unsafe_allow_html=True,
+)
+
 st.title("🥚 Nest Egg — 投資学習 & 財務管理ダッシュボード")
 st.caption(
     "社会人1年目に向けて、投資の分析スキルを自分で磨くための学習用ツールです。"
