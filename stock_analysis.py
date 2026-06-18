@@ -17,6 +17,7 @@ PERIOD_PRESETS = {
     "1年": ("1y", "1d"),
     "2年": ("2y", "1d"),
 }
+SHORT_PERIOD_LABELS = {"1日", "1週間", "1ヶ月"}
 
 
 @st.cache_data(ttl=60 * 5, show_spinner=False)
@@ -197,7 +198,9 @@ def add_indicators(df: pd.DataFrame, sma_short: int, sma_long: int) -> pd.DataFr
     return df
 
 
-def build_chart(df: pd.DataFrame, sma_short: int, sma_long: int, ticker: str) -> go.Figure:
+def build_chart(
+    df: pd.DataFrame, sma_short: int, sma_long: int, ticker: str, period_label: str
+) -> go.Figure:
     fig = make_subplots(
         rows=2,
         cols=1,
@@ -234,7 +237,8 @@ def build_chart(df: pd.DataFrame, sma_short: int, sma_long: int, ticker: str) ->
         margin=dict(t=60, b=20),
         dragmode=False,
     )
-    fig.update_xaxes(fixedrange=True)
+    tickformat = "%-d日" if period_label in SHORT_PERIOD_LABELS else "%-m月"
+    fig.update_xaxes(fixedrange=True, tickformat=tickformat)
     fig.update_yaxes(fixedrange=True)
     fig.update_yaxes(range=[0, 100], row=2, col=1)
     return fig
@@ -312,7 +316,7 @@ def render_single_stock_panel(
 
     df = add_indicators(df, sma_short, sma_long)
     st.plotly_chart(
-        build_chart(df, sma_short, sma_long, ticker),
+        build_chart(df, sma_short, sma_long, ticker, period_label),
         use_container_width=True,
         config={"scrollZoom": False, "displayModeBar": False, "doubleClickDelay": 1000},
     )
