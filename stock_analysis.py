@@ -44,6 +44,28 @@ def fetch_dividends(ticker: str) -> pd.Series:
     return yf.Ticker(normalize_ticker(ticker)).dividends
 
 
+@st.cache_data(ttl=60 * 10, show_spinner=False)
+def search_ticker_by_name(query: str) -> list[dict]:
+    """企業名やキーワードから、候補となる銘柄コードをyfinance経由で検索する。"""
+    query = query.strip()
+    if not query:
+        return []
+    try:
+        quotes = yf.Search(query, max_results=8, news_count=0, lists_count=0).quotes
+    except Exception:
+        return []
+
+    results = []
+    for quote in quotes:
+        symbol = quote.get("symbol")
+        name = quote.get("shortname") or quote.get("longname")
+        if not symbol or not name:
+            continue
+        exchange = quote.get("exchange") or ""
+        results.append({"symbol": symbol, "name": name, "exchange": exchange})
+    return results
+
+
 @st.cache_data(ttl=60 * 30, show_spinner=False)
 def fetch_company_info(ticker: str) -> dict:
     """yfinanceの`.info`を1回だけ取得し、ファンダメンタルズ・業界情報の両方で共有する。"""
@@ -320,6 +342,20 @@ def render_single_stock_panel(
             "長期移動平均(本)", min_value=20, max_value=200, value=75, key=f"{key_prefix}_sma_long"
         )
     period, interval = PERIOD_PRESETS[period_label]
+
+    with st.popover("🔍 銘柄コードが分からない場合は企業名で検索"):
+        name_query = st.text_input("企業名（例: トヨタ, Apple）", key=f"{key_prefix}_name_query")
+        if name_query:
+            candidates = search_ticker_by_name(name_query)
+            if not candidates:
+                st.caption("候補が見つかりませんでした。別のキーワードで試してみてください。")
+            for candidate in candidates:
+                label = f"{candidate['symbol']} — {candidate['name']}"
+                if candidate["exchange"]:
+                    label += f"（{candidate['exchange']}）"
+                if st.button(label, key=f"{key_prefix}_pick_{candidate['symbol']}"):
+                    st.session_state[f"{key_prefix}_ticker"] = candidate["symbol"]
+                    st.rerun()
 
     result = {"ticker": ticker, "per": None, "pbr": None, "roe": None, "dividend_yield": None}
 
