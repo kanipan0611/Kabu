@@ -6,10 +6,22 @@ import streamlit as st
 import yfinance as yf
 from plotly.subplots import make_subplots
 
+from secrets_utils import get_secret
 
-@st.cache_data(ttl=60 * 30, show_spinner=False)
-def fetch_price_history(ticker: str, period: str) -> pd.DataFrame:
-    return yf.Ticker(ticker).history(period=period)
+PERIOD_PRESETS = {
+    "1日": ("1d", "5m"),
+    "1週間": ("5d", "15m"),
+    "1ヶ月": ("1mo", "1d"),
+    "3ヶ月": ("3mo", "1d"),
+    "6ヶ月": ("6mo", "1d"),
+    "1年": ("1y", "1d"),
+    "2年": ("2y", "1d"),
+}
+
+
+@st.cache_data(ttl=60 * 5, show_spinner=False)
+def fetch_price_history(ticker: str, period: str, interval: str = "1d") -> pd.DataFrame:
+    return yf.Ticker(ticker).history(period=period, interval=interval)
 
 
 @st.cache_data(ttl=60 * 30, show_spinner=False)
@@ -31,6 +43,107 @@ def fetch_fundamentals(ticker: str) -> dict:
         "pbr": info.get("priceToBook"),
         "roe": roe * 100 if roe is not None else None,
     }
+
+
+@st.cache_data(ttl=60 * 30, show_spinner=False)
+def fetch_company_profile(ticker: str) -> dict:
+    """セクター・業種・事業概要を自動取得する。"""
+    try:
+        info = yf.Ticker(ticker).info
+    except Exception:
+        return {"sector": None, "industry": None, "summary": None}
+    return {
+        "sector": info.get("sector"),
+        "industry": info.get("industry"),
+        "summary": info.get("longBusinessSummary"),
+    }
+
+
+@st.cache_data(ttl=60 * 15, show_spinner=False)
+def fetch_company_news(ticker: str, limit: int = 5) -> list[dict]:
+    """直近の関連ニュース見出しを自動取得する（yfinance経由）。"""
+    try:
+        raw_news = yf.Ticker(ticker).news or []
+    except Exception:
+        return []
+
+    items = []
+    for entry in raw_news[:limit]:
+        if not isinstance(entry, dict):
+            continue
+        content = entry.get("content", entry)
+        if not isinstance(content, dict):
+            continue
+        title = content.get("title")
+        if not title:
+            continue
+
+        provider = content.get("provider")
+        publisher = provider.get("displayName") if isinstance(provider, dict) else content.get("publisher")
+
+        link_field = content.get("canonicalUrl")
+        link = link_field.get("url") if isinstance(link_field, dict) else content.get("link")
+
+        items.append({"title": title, "publisher": publisher or "", "link": link or ""})
+    return items
+
+
+def claude_news_commentary(api_key: str, ticker: str, profile: dict, news_items: list[dict]) -> str:
+    import anthropic
+
+    client = anthropic.Anthropic(api_key=api_key)
+    headlines = "\n".join(f"- {n['title']}（{n['publisher']}）" for n in news_items) or "(関連ニュースなし)"
+    prompt = (
+        "あなたは投資初心者向けのファイナンス教育アシスタントです。"
+        "以下の銘柄に関する直近のニュース見出しと業界情報をもとに、"
+        "株価に影響しそうな着目点を、初心者にも分かりやすい日本語で300字程度にまとめてください。"
+        "あくまで一つの「参考的な見方」として提示し、"
+        "「買い」「売り」のような断定的な助言は避けてください。\n\n"
+        f"銘柄: {ticker}\n"
+        f"セクター: {profile.get('sector') or '不明'}\n"
+        f"業種: {profile.get('industry') or '不明'}\n"
+        f"直近のニュース見出し:\n{headlines}\n"
+    )
+    message = client.messages.create(
+        model="claude-sonnet-4-5",
+        max_tokens=500,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    return message.content[0].text
+
+
+def render_news_section(ticker: str, key_prefix: str) -> None:
+    st.markdown("**📰 関連ニュース & 業界情報（自動取得）**")
+
+    profile = fetch_company_profile(ticker)
+    if profile.get("sector") or profile.get("industry"):
+        st.caption(f"セクター: {profile.get('sector') or '不明'} ／ 業種: {profile.get('industry') or '不明'}")
+
+    news_items = fetch_company_news(ticker)
+    if not news_items:
+        st.caption("関連ニュースを取得できませんでした。")
+    else:
+        for item in news_items:
+            if item["link"]:
+                st.markdown(f"- [{item['title']}]({item['link']}) 　_{item['publisher']}_")
+            else:
+                st.markdown(f"- {item['title']} 　_{item['publisher']}_")
+
+    if st.button("🧭 ニュース・業界情報をもとに見解を生成", key=f"{key_prefix}_news_view_{ticker}"):
+        api_key = get_secret("ANTHROPIC_API_KEY")
+        if api_key:
+            try:
+                with st.spinner("Claudeが見解を作成しています..."):
+                    commentary = claude_news_commentary(api_key, ticker, profile, news_items)
+                st.info(commentary)
+            except Exception as e:
+                st.warning(f"Claude APIの呼び出しに失敗しました（{e}）")
+        else:
+            st.caption(
+                "ANTHROPIC_API_KEY が未設定のため見解を生成できません。"
+                "上記のニュース見出しを自分で読んで、自分なりの見解を考えてみましょう。"
+            )
+    st.caption("これはあくまで参考的な一つの見方であり、投資助言ではありません。最終判断は自己責任で行ってください。")
 
 
 def calculate_trailing_dividend_yield(ticker: str) -> dict:
@@ -168,17 +281,18 @@ def render_single_stock_panel(
             key=f"{key_prefix}_ticker",
         )
     with col2:
-        period = st.selectbox(
-            "表示期間", ["3mo", "6mo", "1y", "2y"], index=1, key=f"{key_prefix}_period"
+        period_label = st.selectbox(
+            "表示期間", list(PERIOD_PRESETS.keys()), index=4, key=f"{key_prefix}_period"
         )
     with col3:
         sma_short = st.number_input(
-            "短期移動平均(日)", min_value=5, max_value=60, value=25, key=f"{key_prefix}_sma_short"
+            "短期移動平均(本)", min_value=5, max_value=60, value=25, key=f"{key_prefix}_sma_short"
         )
     with col4:
         sma_long = st.number_input(
-            "長期移動平均(日)", min_value=20, max_value=200, value=75, key=f"{key_prefix}_sma_long"
+            "長期移動平均(本)", min_value=20, max_value=200, value=75, key=f"{key_prefix}_sma_long"
         )
+    period, interval = PERIOD_PRESETS[period_label]
 
     result = {"ticker": ticker, "per": None, "pbr": None, "roe": None, "dividend_yield": None}
 
@@ -187,7 +301,7 @@ def render_single_stock_panel(
         return result
 
     try:
-        df = fetch_price_history(ticker, period)
+        df = fetch_price_history(ticker, period, interval)
     except Exception as e:
         st.error(f"データ取得に失敗しました: {e}")
         return result
@@ -215,6 +329,8 @@ def render_single_stock_panel(
         result["dividend_yield"] = div_info["yield_pct"]
         st.metric("配当利回り（直近1年実績）", f"{div_info['yield_pct']:.2f}%")
         st.caption(dividend_hint(div_info["yield_pct"]))
+
+    render_news_section(ticker, key_prefix)
 
     if show_fundamentals:
         st.markdown("**📋 財務指標（自動取得・比較用）**")

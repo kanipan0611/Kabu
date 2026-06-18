@@ -1,10 +1,9 @@
 """ファンダメンタルズ手入力フォームと、Claudeによる解説／分析メモ機能。"""
 
-import os
-
 import streamlit as st
 
 from notes_store import get_notes, get_notion_config, save_note
+from secrets_utils import get_secret
 from stock_analysis import fetch_fundamentals
 
 PER_THRESHOLDS = (15, 25)
@@ -13,11 +12,7 @@ ROE_THRESHOLDS = (8, 15)
 
 
 def get_api_key() -> str:
-    """Streamlit Cloudの st.secrets を優先し、ローカルの環境変数にもフォールバックする。"""
-    try:
-        return st.secrets["ANTHROPIC_API_KEY"]
-    except Exception:
-        return os.environ.get("ANTHROPIC_API_KEY", "")
+    return get_secret("ANTHROPIC_API_KEY")
 
 
 def rule_based_commentary(per: float | None, pbr: float | None, roe: float | None) -> list[str]:
