@@ -1,5 +1,7 @@
 """銘柄チャートの取得・指標計算・初心者向けヒント表示。"""
 
+import re
+
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
@@ -19,22 +21,34 @@ PERIOD_PRESETS = {
 }
 SHORT_PERIOD_LABELS = {"1日", "1週間", "1ヶ月"}
 
+_JP_TICKER_RE = re.compile(r"^[0-9][0-9A-Z]{3}$")
+
+
+def normalize_ticker(ticker: str) -> str:
+    """4桁の日本株コードのみが入力された場合、yfinance用に「.T」を補う。"""
+    code = ticker.strip().upper()
+    if not code or "." in code:
+        return code
+    if _JP_TICKER_RE.match(code):
+        return f"{code}.T"
+    return code
+
 
 @st.cache_data(ttl=60 * 5, show_spinner=False)
 def fetch_price_history(ticker: str, period: str, interval: str = "1d") -> pd.DataFrame:
-    return yf.Ticker(ticker).history(period=period, interval=interval)
+    return yf.Ticker(normalize_ticker(ticker)).history(period=period, interval=interval)
 
 
 @st.cache_data(ttl=60 * 30, show_spinner=False)
 def fetch_dividends(ticker: str) -> pd.Series:
-    return yf.Ticker(ticker).dividends
+    return yf.Ticker(normalize_ticker(ticker)).dividends
 
 
 @st.cache_data(ttl=60 * 30, show_spinner=False)
 def fetch_fundamentals(ticker: str) -> dict:
     """yfinanceからPER・PBR・ROEを自動取得する（最終的な評価・判断は自分で行う）。"""
     try:
-        info = yf.Ticker(ticker).info
+        info = yf.Ticker(normalize_ticker(ticker)).info
     except Exception:
         return {"per": None, "pbr": None, "roe": None}
 
@@ -50,7 +64,7 @@ def fetch_fundamentals(ticker: str) -> dict:
 def fetch_company_profile(ticker: str) -> dict:
     """セクター・業種・事業概要を自動取得する。"""
     try:
-        info = yf.Ticker(ticker).info
+        info = yf.Ticker(normalize_ticker(ticker)).info
     except Exception:
         return {"sector": None, "industry": None, "summary": None}
     return {
@@ -64,7 +78,7 @@ def fetch_company_profile(ticker: str) -> dict:
 def fetch_company_news(ticker: str, limit: int = 5) -> list[dict]:
     """直近の関連ニュース見出しを自動取得する（yfinance経由）。"""
     try:
-        raw_news = yf.Ticker(ticker).news or []
+        raw_news = yf.Ticker(normalize_ticker(ticker)).news or []
     except Exception:
         return []
 
