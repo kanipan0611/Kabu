@@ -24,12 +24,15 @@ st.caption(
 
 render_finance_sidebar()
 
-render_portfolio_section()
+with st.container(border=True):
+    render_portfolio_section()
 
-st.markdown("---")
+st.write("")
 
-ticker = render_stock_section()
+with st.container(border=True):
+    ticker = render_stock_section()
 
-st.markdown("---")
+st.write("")
 
-render_fundamentals_section(default_ticker=ticker or "7203.T")
+with st.container(border=True):
+    render_fundamentals_section(default_ticker=ticker or "7203.T")

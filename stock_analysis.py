@@ -119,7 +119,10 @@ def build_chart(df: pd.DataFrame, sma_short: int, sma_long: int, ticker: str) ->
         xaxis_rangeslider_visible=False,
         legend=dict(orientation="h", yanchor="bottom", y=1.02),
         margin=dict(t=60, b=20),
+        dragmode=False,
     )
+    fig.update_xaxes(fixedrange=True)
+    fig.update_yaxes(fixedrange=True)
     fig.update_yaxes(range=[0, 100], row=2, col=1)
     return fig
 
@@ -194,7 +197,11 @@ def render_single_stock_panel(
         return result
 
     df = add_indicators(df, sma_short, sma_long)
-    st.plotly_chart(build_chart(df, sma_short, sma_long, ticker), use_container_width=True)
+    st.plotly_chart(
+        build_chart(df, sma_short, sma_long, ticker),
+        use_container_width=True,
+        config={"scrollZoom": False, "displayModeBar": False, "doubleClickDelay": 1000},
+    )
 
     st.markdown("**🔎 初心者向けヒント**")
     st.info(f"トレンド: {trend_hint(df)}")
