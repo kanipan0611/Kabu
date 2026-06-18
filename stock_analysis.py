@@ -45,13 +45,17 @@ def fetch_dividends(ticker: str) -> pd.Series:
 
 
 @st.cache_data(ttl=60 * 30, show_spinner=False)
+def fetch_company_info(ticker: str) -> dict:
+    """yfinanceの`.info`を1回だけ取得し、ファンダメンタルズ・業界情報の両方で共有する。"""
+    try:
+        return yf.Ticker(normalize_ticker(ticker)).info or {}
+    except Exception:
+        return {}
+
+
 def fetch_fundamentals(ticker: str) -> dict:
     """yfinanceからPER・PBR・ROEを自動取得する（最終的な評価・判断は自分で行う）。"""
-    try:
-        info = yf.Ticker(normalize_ticker(ticker)).info
-    except Exception:
-        return {"per": None, "pbr": None, "roe": None}
-
+    info = fetch_company_info(ticker)
     roe = info.get("returnOnEquity")
     return {
         "per": info.get("trailingPE"),
@@ -60,13 +64,9 @@ def fetch_fundamentals(ticker: str) -> dict:
     }
 
 
-@st.cache_data(ttl=60 * 30, show_spinner=False)
 def fetch_company_profile(ticker: str) -> dict:
     """セクター・業種・事業概要を自動取得する。"""
-    try:
-        info = yf.Ticker(normalize_ticker(ticker)).info
-    except Exception:
-        return {"sector": None, "industry": None, "summary": None}
+    info = fetch_company_info(ticker)
     return {
         "sector": info.get("sector"),
         "industry": info.get("industry"),
@@ -161,19 +161,27 @@ def render_news_section(ticker: str, key_prefix: str) -> None:
     st.caption("これはあくまで参考的な一つの見方であり、投資助言ではありません。最終判断は自己責任で行ってください。")
 
 
-def calculate_trailing_dividend_yield(ticker: str) -> dict:
-    """直近1年間の配当合計と、現在株価から算出した配当利回り(%)を返す。"""
+def calculate_trailing_dividend_yield(ticker: str, current_price: float | None = None) -> dict:
+    """直近1年間の配当合計と、現在株価から算出した配当利回り(%)を返す。
+
+    current_priceを渡せば、すでに取得済みの価格データを再利用してyfinanceへの
+    追加リクエストを避けられる（チャート表示時の重複取得・レート制限対策）。
+    """
     try:
         dividends = fetch_dividends(ticker)
-        price_df = fetch_price_history(ticker, "5d")
     except Exception:
         return {"annual_dividend": 0.0, "price": None, "yield_pct": None}
 
-    price_df = price_df[price_df["Close"].notna()]
-    if price_df.empty:
-        return {"annual_dividend": 0.0, "price": None, "yield_pct": None}
-
-    price = price_df["Close"].iloc[-1]
+    price = current_price
+    if price is None:
+        try:
+            price_df = fetch_price_history(ticker, "5d")
+        except Exception:
+            return {"annual_dividend": 0.0, "price": None, "yield_pct": None}
+        price_df = price_df[price_df["Close"].notna()]
+        if price_df.empty:
+            return {"annual_dividend": 0.0, "price": None, "yield_pct": None}
+        price = price_df["Close"].iloc[-1]
 
     if dividends.empty:
         return {"annual_dividend": 0.0, "price": price, "yield_pct": 0.0}
@@ -342,7 +350,7 @@ def render_single_stock_panel(
     st.info(f"RSI: {rsi_hint(df)}")
 
     st.markdown("**💴 配当情報（自動取得）**")
-    div_info = calculate_trailing_dividend_yield(ticker)
+    div_info = calculate_trailing_dividend_yield(ticker, current_price=df["Close"].iloc[-1])
     if div_info["yield_pct"] is None:
         st.caption("配当データを取得できませんでした。")
     else:
