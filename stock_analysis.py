@@ -169,6 +169,7 @@ def calculate_trailing_dividend_yield(ticker: str) -> dict:
     except Exception:
         return {"annual_dividend": 0.0, "price": None, "yield_pct": None}
 
+    price_df = price_df[price_df["Close"].notna()]
     if price_df.empty:
         return {"annual_dividend": 0.0, "price": None, "yield_pct": None}
 
@@ -324,6 +325,7 @@ def render_single_stock_panel(
         st.error(f"データ取得に失敗しました: {e}")
         return result
 
+    df = df[df["Close"].notna()]
     if df.empty:
         st.warning("データが見つかりませんでした。銘柄コードを確認してください。")
         return result
