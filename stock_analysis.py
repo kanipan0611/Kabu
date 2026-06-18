@@ -12,6 +12,46 @@ def fetch_price_history(ticker: str, period: str) -> pd.DataFrame:
     return yf.Ticker(ticker).history(period=period)
 
 
+@st.cache_data(ttl=60 * 30, show_spinner=False)
+def fetch_dividends(ticker: str) -> pd.Series:
+    return yf.Ticker(ticker).dividends
+
+
+def calculate_trailing_dividend_yield(ticker: str) -> dict:
+    """直近1年間の配当合計と、現在株価から算出した配当利回り(%)を返す。"""
+    try:
+        dividends = fetch_dividends(ticker)
+        price_df = fetch_price_history(ticker, "5d")
+    except Exception:
+        return {"annual_dividend": 0.0, "price": None, "yield_pct": None}
+
+    if price_df.empty:
+        return {"annual_dividend": 0.0, "price": None, "yield_pct": None}
+
+    price = price_df["Close"].iloc[-1]
+
+    if dividends.empty:
+        return {"annual_dividend": 0.0, "price": price, "yield_pct": 0.0}
+
+    cutoff = pd.Timestamp.now(tz=dividends.index.tz) - pd.Timedelta(days=365)
+    annual_dividend = dividends[dividends.index >= cutoff].sum()
+    yield_pct = (annual_dividend / price * 100) if price else None
+    return {"annual_dividend": annual_dividend, "price": price, "yield_pct": yield_pct}
+
+
+def dividend_hint(yield_pct: float) -> str:
+    if yield_pct == 0:
+        return "直近1年の配当実績はありません（無配当）。配当より株価成長を重視するタイプの銘柄かもしれません。"
+    if yield_pct < 2:
+        return f"配当利回り{yield_pct:.2f}%は市場平均よりやや低めです。"
+    if yield_pct <= 4:
+        return f"配当利回り{yield_pct:.2f}%は標準的な水準です。"
+    return (
+        f"配当利回り{yield_pct:.2f}%は高配当とされる水準です。"
+        "ただし株価下落によって利回りが見かけ上高くなっているケースもあるため、理由を確認しましょう。"
+    )
+
+
 def calculate_rsi(close: pd.Series, window: int = 14) -> pd.Series:
     delta = close.diff()
     gain = delta.clip(lower=0).rolling(window).mean()
@@ -121,7 +161,7 @@ def render_single_stock_panel(
             "長期移動平均(日)", min_value=20, max_value=200, value=75, key=f"{key_prefix}_sma_long"
         )
 
-    result = {"ticker": ticker, "per": None, "pbr": None, "roe": None}
+    result = {"ticker": ticker, "per": None, "pbr": None, "roe": None, "dividend_yield": None}
 
     if not ticker:
         st.info("銘柄コードを入力してください。")
@@ -143,6 +183,15 @@ def render_single_stock_panel(
     st.markdown("**🔎 初心者向けヒント**")
     st.info(f"トレンド: {trend_hint(df)}")
     st.info(f"RSI: {rsi_hint(df)}")
+
+    st.markdown("**💴 配当情報（自動取得）**")
+    div_info = calculate_trailing_dividend_yield(ticker)
+    if div_info["yield_pct"] is None:
+        st.caption("配当データを取得できませんでした。")
+    else:
+        result["dividend_yield"] = div_info["yield_pct"]
+        st.metric("配当利回り（直近1年実績）", f"{div_info['yield_pct']:.2f}%")
+        st.caption(dividend_hint(div_info["yield_pct"]))
 
     if show_fundamentals:
         st.markdown("**📋 財務指標（手入力・比較用）**")
@@ -188,9 +237,13 @@ def render_stock_section() -> str | None:
         st.markdown("**📊 財務指標の比較**")
         compare_df = pd.DataFrame(
             {
-                "指標": ["PER（倍）", "PBR（倍）", "ROE（%）"],
-                result_a["ticker"] or "銘柄A": [result_a["per"], result_a["pbr"], result_a["roe"]],
-                result_b["ticker"] or "銘柄B": [result_b["per"], result_b["pbr"], result_b["roe"]],
+                "指標": ["PER（倍）", "PBR（倍）", "ROE（%）", "配当利回り（%・自動取得）"],
+                result_a["ticker"] or "銘柄A": [
+                    result_a["per"], result_a["pbr"], result_a["roe"], result_a["dividend_yield"]
+                ],
+                result_b["ticker"] or "銘柄B": [
+                    result_b["per"], result_b["pbr"], result_b["roe"], result_b["dividend_yield"]
+                ],
             }
         )
         st.dataframe(compare_df, hide_index=True, use_container_width=True)

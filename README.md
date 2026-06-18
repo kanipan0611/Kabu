@@ -6,8 +6,8 @@
 
 - `app.py` — エントリーポイント
 - `finance_planner.py` — マイ・ファイナンス設定（サイドバー）と投資予算の計算
-- `portfolio.py` — 資産配分（現金／インデックス投信／個別株）の入力と円グラフ表示
-- `stock_analysis.py` — 株価チャート取得・移動平均線・RSI・初心者向けヒント・2銘柄比較モード
+- `portfolio.py` — 資産配分（現金／インデックス投信／個別株）の入力と円グラフ表示、保有個別株の配当チェック（自動取得）
+- `stock_analysis.py` — 株価チャート取得・移動平均線・RSI・配当利回り（自動取得）・初心者向けヒント・2銘柄比較モード
 - `fundamentals.py` — ファンダメンタルズ入力とClaudeによる解説
 - `notes_store.py` — 分析メモのローカル保存（`data/notes.json`）
 
