@@ -11,6 +11,14 @@ PBR_THRESHOLDS = (1, 3)
 ROE_THRESHOLDS = (8, 15)
 
 
+def get_api_key() -> str:
+    """Streamlit Cloudの st.secrets を優先し、ローカルの環境変数にもフォールバックする。"""
+    try:
+        return st.secrets["ANTHROPIC_API_KEY"]
+    except Exception:
+        return os.environ.get("ANTHROPIC_API_KEY", "")
+
+
 def rule_based_commentary(per: float | None, pbr: float | None, roe: float | None) -> list[str]:
     """ANTHROPIC_API_KEY が無い場合に使う、簡易ルールベースの解説。"""
     lines = []
@@ -77,7 +85,7 @@ def render_fundamentals_section(default_ticker: str = "7203.T") -> None:
     memo = st.text_area("分析メモ（なぜこの株に注目したか）", height=120, key="memo_input")
 
     if st.button("📊 この数値を評価する"):
-        api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+        api_key = get_api_key()
         st.subheader("評価")
         if api_key:
             try:

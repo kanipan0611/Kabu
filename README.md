@@ -32,6 +32,26 @@ export ANTHROPIC_API_KEY=sk-...
 streamlit run app.py
 ```
 
+## スマホからアクセスする（Streamlit Community Cloudへのデプロイ）
+
+1. https://share.streamlit.io にアクセスし、GitHubアカウントでログイン
+2. 「New app」→ 以下を指定
+   - Repository: `kanipan0611/Kabu`
+   - Branch: `claude/investment-dashboard-streamlit-4bzaax`（または `main` にマージ後ならそちら）
+   - Main file path: `app.py`
+3. 「Advanced settings」→「Secrets」に以下を貼り付け（Claude解説機能を使う場合のみ）
+   ```toml
+   ANTHROPIC_API_KEY = "sk-ここに自分のAPIキー"
+   ```
+4. 「Deploy」をクリックすると数分で `https://〇〇.streamlit.app` のようなURLが発行される
+5. そのURLをスマホのブラウザで開けば、どこからでも利用可能
+
+### 注意点
+
+- 無料プランのストレージは再起動・再デプロイ時にリセットされる場合があります。
+  `data/notes.json` に保存した分析メモは永続化されない可能性があるため、
+  長期保存したいメモは別途バックアップすることをおすすめします。
+
 ## 注意
 
 このアプリが表示する内容はすべて教育目的の参考情報であり、投資助言ではありません。
