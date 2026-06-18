@@ -1,0 +1,29 @@
+"""投資学習 & 財務管理ダッシュボード。
+
+3つのセクションで構成：
+  1. マイ・ファイナンス設定（サイドバー）
+  2. インタラクティブ・チャート分析
+  3. 分析ノート & ファンダメンタルズ入力
+"""
+
+import streamlit as st
+
+from finance_planner import render_finance_sidebar
+from fundamentals import render_fundamentals_section
+from stock_analysis import render_stock_section
+
+st.set_page_config(page_title="投資学習 & 財務管理ダッシュボード", page_icon="📊", layout="wide")
+
+st.title("📊 投資学習 & 財務管理ダッシュボード")
+st.caption(
+    "社会人1年目に向けて、投資の分析スキルを自分で磨くための学習用ツールです。"
+    "表示内容は教育目的の参考情報であり、投資助言ではありません。"
+)
+
+render_finance_sidebar()
+
+ticker = render_stock_section()
+
+st.markdown("---")
+
+render_fundamentals_section(default_ticker=ticker or "7203.T")
