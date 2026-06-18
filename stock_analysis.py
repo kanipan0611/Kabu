@@ -97,41 +97,103 @@ def rsi_hint(df: pd.DataFrame) -> str:
     return f"RSIは{rsi:.1f}で中立的な範囲です。過熱も悲観もしていない平常の状態です。"
 
 
-def render_stock_section() -> str | None:
-    st.header("📈 インタラクティブ・チャート分析")
-
+def render_single_stock_panel(
+    key_prefix: str, default_ticker: str, show_fundamentals: bool = False
+) -> dict:
+    """1銘柄分のチャート＋ヒントを描画する。比較モードでは左右に並べて2回呼び出す。"""
     col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
     with col1:
         ticker = st.text_input(
-            "銘柄コード（例: 7203.T トヨタ, AAPL アップル）", value="7203.T"
+            "銘柄コード（例: 7203.T トヨタ, AAPL アップル）",
+            value=default_ticker,
+            key=f"{key_prefix}_ticker",
         )
     with col2:
-        period = st.selectbox("表示期間", ["3mo", "6mo", "1y", "2y"], index=1)
+        period = st.selectbox(
+            "表示期間", ["3mo", "6mo", "1y", "2y"], index=1, key=f"{key_prefix}_period"
+        )
     with col3:
-        sma_short = st.number_input("短期移動平均(日)", min_value=5, max_value=60, value=25)
+        sma_short = st.number_input(
+            "短期移動平均(日)", min_value=5, max_value=60, value=25, key=f"{key_prefix}_sma_short"
+        )
     with col4:
-        sma_long = st.number_input("長期移動平均(日)", min_value=20, max_value=200, value=75)
+        sma_long = st.number_input(
+            "長期移動平均(日)", min_value=20, max_value=200, value=75, key=f"{key_prefix}_sma_long"
+        )
+
+    result = {"ticker": ticker, "per": None, "pbr": None, "roe": None}
 
     if not ticker:
         st.info("銘柄コードを入力してください。")
-        return None
+        return result
 
     try:
         df = fetch_price_history(ticker, period)
     except Exception as e:
         st.error(f"データ取得に失敗しました: {e}")
-        return ticker
+        return result
 
     if df.empty:
         st.warning("データが見つかりませんでした。銘柄コードを確認してください。")
-        return ticker
+        return result
 
     df = add_indicators(df, sma_short, sma_long)
     st.plotly_chart(build_chart(df, sma_short, sma_long, ticker), use_container_width=True)
 
-    st.subheader("🔎 初心者向けヒント")
-    st.info(f"**トレンド:** {trend_hint(df)}")
-    st.info(f"**RSI:** {rsi_hint(df)}")
-    st.caption("これは教育目的の参考情報であり、投資助言ではありません。最終判断は自己責任で行ってください。")
+    st.markdown("**🔎 初心者向けヒント**")
+    st.info(f"トレンド: {trend_hint(df)}")
+    st.info(f"RSI: {rsi_hint(df)}")
 
-    return ticker
+    if show_fundamentals:
+        st.markdown("**📋 財務指標（手入力・比較用）**")
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            result["per"] = st.number_input(
+                "PER（倍）", min_value=0.0, value=0.0, step=0.1, key=f"{key_prefix}_per"
+            )
+        with c2:
+            result["pbr"] = st.number_input(
+                "PBR（倍）", min_value=0.0, value=0.0, step=0.1, key=f"{key_prefix}_pbr"
+            )
+        with c3:
+            result["roe"] = st.number_input(
+                "ROE（%）", min_value=0.0, value=0.0, step=0.1, key=f"{key_prefix}_roe"
+            )
+
+    return result
+
+
+def render_stock_section() -> str | None:
+    st.header("📈 インタラクティブ・チャート分析")
+
+    compare_mode = st.toggle("🔁 2銘柄比較モード", value=False, key="compare_mode")
+
+    if not compare_mode:
+        result = render_single_stock_panel("single", "7203.T")
+        st.caption("これは教育目的の参考情報であり、投資助言ではありません。最終判断は自己責任で行ってください。")
+        return result["ticker"]
+
+    col_a, col_b = st.columns(2)
+    with col_a:
+        st.subheader("銘柄A")
+        result_a = render_single_stock_panel("cmp_a", "7203.T", show_fundamentals=True)
+    with col_b:
+        st.subheader("銘柄B")
+        result_b = render_single_stock_panel("cmp_b", "6758.T", show_fundamentals=True)
+
+    if any(
+        v is not None and v > 0
+        for v in (result_a["per"], result_a["pbr"], result_a["roe"], result_b["per"], result_b["pbr"], result_b["roe"])
+    ):
+        st.markdown("**📊 財務指標の比較**")
+        compare_df = pd.DataFrame(
+            {
+                "指標": ["PER（倍）", "PBR（倍）", "ROE（%）"],
+                result_a["ticker"] or "銘柄A": [result_a["per"], result_a["pbr"], result_a["roe"]],
+                result_b["ticker"] or "銘柄B": [result_b["per"], result_b["pbr"], result_b["roe"]],
+            }
+        )
+        st.dataframe(compare_df, hide_index=True, use_container_width=True)
+
+    st.caption("これは教育目的の参考情報であり、投資助言ではありません。最終判断は自己責任で行ってください。")
+    return result_a["ticker"]

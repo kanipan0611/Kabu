@@ -1,15 +1,17 @@
 """投資学習 & 財務管理ダッシュボード。
 
-3つのセクションで構成：
+セクション構成：
   1. マイ・ファイナンス設定（サイドバー）
-  2. インタラクティブ・チャート分析
-  3. 分析ノート & ファンダメンタルズ入力
+  2. ポートフォリオ可視化
+  3. インタラクティブ・チャート分析（1銘柄 / 2銘柄比較モード）
+  4. 分析ノート & ファンダメンタルズ入力
 """
 
 import streamlit as st
 
 from finance_planner import render_finance_sidebar
 from fundamentals import render_fundamentals_section
+from portfolio import render_portfolio_section
 from stock_analysis import render_stock_section
 
 st.set_page_config(page_title="投資学習 & 財務管理ダッシュボード", page_icon="📊", layout="wide")
@@ -21,6 +23,10 @@ st.caption(
 )
 
 render_finance_sidebar()
+
+render_portfolio_section()
+
+st.markdown("---")
 
 ticker = render_stock_section()
 
