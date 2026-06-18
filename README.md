@@ -9,7 +9,7 @@
 - `portfolio.py` — 資産配分（現金／インデックス投信／個別株）の入力と円グラフ表示、保有個別株の配当チェック（自動取得）
 - `stock_analysis.py` — 株価チャート取得・移動平均線・RSI・配当利回り（自動取得）・初心者向けヒント・2銘柄比較モード
 - `fundamentals.py` — ファンダメンタルズ入力とClaudeによる解説
-- `notes_store.py` — 分析メモのローカル保存（`data/notes.json`）
+- `notes_store.py` — 分析メモの保存（Notionデータベース、未設定時は`data/notes.json`にフォールバック）
 
 ## セットアップ
 
@@ -49,8 +49,44 @@ streamlit run app.py
 ### 注意点
 
 - 無料プランのストレージは再起動・再デプロイ時にリセットされる場合があります。
-  `data/notes.json` に保存した分析メモは永続化されない可能性があるため、
-  長期保存したいメモは別途バックアップすることをおすすめします。
+  分析メモを消えないように保存したい場合は、下記の「Notionとの連携」を設定してください。
+
+## 分析メモをNotionに保存する（推奨・データが消えない）
+
+Streamlit Cloud無料プランはアプリ再起動時にローカルファイルが消えることがあるため、
+分析メモはNotionのデータベースに保存するのがおすすめです。未設定の場合は自動的に
+ローカルファイル保存にフォールバックするので、設定しなくてもアプリは動きます。
+
+1. **Notionでインテグレーションを作成**
+   https://www.notion.so/my-integrations を開き、「+ New integration」で
+   新規インテグレーションを作成し、表示された「Internal Integration Secret」をコピーする
+   （これが `NOTION_API_KEY` になります）。
+
+2. **メモ保存用のデータベース（テーブル）をNotion上に作成**
+   新しいページに「テーブル」のデータベースを作成し、以下のプロパティ（列）を用意する。
+   - `銘柄コード` … タイトル（Title）型（テーブル作成時に最初から入っている列をリネームしてOK）
+   - `メモ` … テキスト（Text）型
+   - `保存日時` … 日付（Date）型
+
+3. **データベースにインテグレーションを接続**
+   作成したデータベースページ右上の「…」メニュー →「コネクトを追加」から、
+   手順1で作ったインテグレーションを選択して接続する。
+
+4. **データベースIDを取得**
+   データベースをブラウザで開いたときのURLから32文字の英数字部分を取得する。
+   ```
+   https://www.notion.so/your-workspace/1a2b3c4d5e6f7890abcd1234ef567890?v=...
+                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ ← これがDATABASE_ID
+   ```
+
+5. **Secretsに設定**
+   ローカルなら環境変数、Streamlit Cloudなら「Advanced settings」→「Secrets」に以下を追加。
+   ```toml
+   NOTION_API_KEY = "secret_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   NOTION_DATABASE_ID = "1a2b3c4d5e6f7890abcd1234ef567890"
+   ```
+
+設定後にアプリで保存したメモは、指定したNotionデータベースに1件ずつページとして追加されます。
 
 ## 注意
 

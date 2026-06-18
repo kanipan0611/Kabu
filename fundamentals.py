@@ -4,7 +4,7 @@ import os
 
 import streamlit as st
 
-from notes_store import get_notes, save_note
+from notes_store import get_notes, get_notion_config, save_note
 
 PER_THRESHOLDS = (15, 25)
 PBR_THRESHOLDS = (1, 3)
@@ -102,7 +102,11 @@ def render_fundamentals_section(default_ticker: str = "7203.T") -> None:
                 st.write(f"- {line}")
 
     st.markdown("---")
-    st.subheader("🗒 分析メモ（ローカル保存）")
+    st.subheader("🗒 分析メモ")
+    if get_notion_config()[0] and get_notion_config()[1]:
+        st.caption("Notionデータベースに保存されます。")
+    else:
+        st.caption("Notion未設定のため、このサーバー上のローカルファイルに保存されます（再デプロイで消える場合があります）。")
 
     if st.button("💾 メモを保存"):
         if memo:
