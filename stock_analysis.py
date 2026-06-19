@@ -51,16 +51,16 @@ def search_ticker_by_name(query: str) -> list[dict]:
     if not query:
         return []
     try:
-        quotes = yf.Search(query, max_results=8, news_count=0, lists_count=0).quotes
+        quotes = yf.Search(query, max_results=8, news_count=0, lists_count=0, enable_fuzzy_query=True).quotes
     except Exception:
         return []
 
     results = []
     for quote in quotes:
         symbol = quote.get("symbol")
-        name = quote.get("shortname") or quote.get("longname")
-        if not symbol or not name:
+        if not symbol:
             continue
+        name = quote.get("shortname") or quote.get("longname") or symbol
         exchange = quote.get("exchange") or ""
         results.append({"symbol": symbol, "name": name, "exchange": exchange})
     return results
