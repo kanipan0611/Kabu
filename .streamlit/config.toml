@@ -1,0 +1,9 @@
+[theme]
+# Nest Egg テーマ — 温かみのあるクリーム地 + 育てる緑
+primaryColor = "#2E8B57"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F6F3EA"
+textColor = "#31333F"
+
+[browser]
+gatherUsageStats = false

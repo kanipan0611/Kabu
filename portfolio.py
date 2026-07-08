@@ -8,11 +8,47 @@ import streamlit as st
 
 from secrets_utils import get_secret
 from stock_analysis import calculate_trailing_dividend_yield
+from user_store import get_setting, set_setting
 
 ASSET_CATEGORIES = ["現金", "インデックス投信", "個別株"]
 ASSET_COLORS = ["#8FBC8F", "#4682B4", "#DAA520"]
 
 DEFAULT_HOLDINGS = pd.DataFrame([{"銘柄コード": "7203.T", "株数": 0, "購入単価": 0.0}])
+
+
+def _initial_holdings() -> pd.DataFrame:
+    """保存済みの保有株リストがあればそれを、なければデフォルト行を返す。"""
+    saved = get_setting("holdings")
+    if saved:
+        try:
+            df = pd.DataFrame(saved)
+            if not df.empty and "銘柄コード" in df.columns:
+                for col, default in [("株数", 0), ("購入単価", 0.0)]:
+                    if col not in df.columns:
+                        df[col] = default
+                return df[["銘柄コード", "株数", "購入単価"]]
+        except Exception:
+            pass
+    return DEFAULT_HOLDINGS
+
+
+def _save_holdings(holdings_df: pd.DataFrame) -> None:
+    """編集された保有株リストをJSONに保存する（空行は除外）。"""
+    records = []
+    for _, row in holdings_df.iterrows():
+        code = str(row.get("銘柄コード") or "").strip()
+        if not code or code == "nan":
+            continue
+        try:
+            records.append({
+                "銘柄コード": code,
+                "株数": int(row.get("株数") or 0),
+                "購入単価": float(row.get("購入単価") or 0.0),
+            })
+        except (TypeError, ValueError):
+            continue
+    if records:
+        set_setting("holdings", records)
 
 # Rakuten CSV: possible column name variants → canonical names
 _RAKUTEN_COL_MAP = {
@@ -147,14 +183,18 @@ def render_portfolio_section(safe_budget: float = 0.0) -> None:
     st.header("🥧 ポートフォリオ可視化")
     st.caption("保有額（または投資予定額）を入力すると、資産配分が円グラフで確認できます。")
 
+    saved_alloc = get_setting("portfolio_allocation", {})
     cols = st.columns(len(ASSET_CATEGORIES))
     amounts = []
     for col, label in zip(cols, ASSET_CATEGORIES):
         with col:
             amount = st.number_input(
-                f"{label}（円）", min_value=0, value=0, step=10_000, key=f"portfolio_{label}"
+                f"{label}（円）", min_value=0,
+                value=int(saved_alloc.get(label, 0)), step=10_000,
+                key=f"portfolio_{label}",
             )
             amounts.append(amount)
+    set_setting("portfolio_allocation", dict(zip(ASSET_CATEGORIES, amounts)))
 
     total = sum(amounts)
     if total <= 0:
@@ -207,7 +247,7 @@ def render_holdings_summary() -> None:
     )
 
     holdings_df = st.data_editor(
-        DEFAULT_HOLDINGS,
+        _initial_holdings(),
         num_rows="dynamic",
         use_container_width=True,
         key="dividend_holdings_editor",
@@ -219,6 +259,7 @@ def render_holdings_summary() -> None:
             ),
         },
     )
+    _save_holdings(holdings_df)
 
     rows = []
     total_annual_dividend = 0.0

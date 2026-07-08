@@ -2,6 +2,8 @@
 
 import streamlit as st
 
+from user_store import get_setting, set_setting
+
 
 def calculate_safe_investment_budget(
     savings: float,
@@ -34,18 +36,27 @@ def calculate_safe_investment_budget(
 def render_finance_sidebar() -> dict:
     st.sidebar.header("💰 マイ・ファイナンス設定")
 
+    saved = get_setting("finance", {})
     savings = st.sidebar.number_input(
-        "現在の貯金額（円）", min_value=0, value=500_000, step=10_000
+        "現在の貯金額（円）", min_value=0,
+        value=int(saved.get("savings", 500_000)), step=10_000, key="fin_savings",
     )
     monthly_income = st.sidebar.number_input(
-        "来年からの予定月収（円）", min_value=0, value=250_000, step=5_000
+        "来年からの予定月収（円）", min_value=0,
+        value=int(saved.get("monthly_income", 250_000)), step=5_000, key="fin_income",
     )
     monthly_expense = st.sidebar.number_input(
-        "想定される月々の生活費（円）", min_value=0, value=150_000, step=5_000
+        "想定される月々の生活費（円）", min_value=0,
+        value=int(saved.get("monthly_expense", 150_000)), step=5_000, key="fin_expense",
     )
     emergency_months = st.sidebar.slider(
-        "生活防衛資金の目安（生活費の何ヶ月分）", min_value=3, max_value=12, value=6
+        "生活防衛資金の目安（生活費の何ヶ月分）", min_value=3, max_value=12,
+        value=int(saved.get("emergency_months", 6)), key="fin_emonths",
     )
+    set_setting("finance", {
+        "savings": savings, "monthly_income": monthly_income,
+        "monthly_expense": monthly_expense, "emergency_months": emergency_months,
+    })
 
     result = calculate_safe_investment_budget(
         savings, monthly_income, monthly_expense, emergency_months

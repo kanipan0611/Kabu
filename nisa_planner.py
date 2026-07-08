@@ -4,6 +4,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from secrets_utils import get_secret
+from user_store import get_setting, set_setting
 
 TSUMITATE_ANNUAL = 1_200_000   # つみたて投資枠 年120万
 GROWTH_ANNUAL = 2_400_000      # 成長投資枠 年240万
@@ -22,21 +23,22 @@ def render_nisa_section(monthly_budget: float = 30_000) -> None:
     # ── 枠管理 ──────────────────────────────────────────
     st.subheader("📋 NISA枠チェック")
 
+    saved = get_setting("nisa", {})
     col1, col2, col3 = st.columns(3)
     with col1:
         ts_used = st.number_input(
             "つみたて枠 今年の累計（円）",
-            min_value=0, value=0, step=10_000, key="nisa_ts_used",
+            min_value=0, value=int(saved.get("ts_used", 0)), step=10_000, key="nisa_ts_used",
         )
     with col2:
         gr_used = st.number_input(
             "成長投資枠 今年の累計（円）",
-            min_value=0, value=0, step=10_000, key="nisa_gr_used",
+            min_value=0, value=int(saved.get("gr_used", 0)), step=10_000, key="nisa_gr_used",
         )
     with col3:
         lifetime_used = st.number_input(
             "生涯累計投資額（円）※過去分含む",
-            min_value=0, value=0, step=100_000, key="nisa_lifetime",
+            min_value=0, value=int(saved.get("lifetime_used", 0)), step=100_000, key="nisa_lifetime",
         )
 
     ts_remain = max(0, TSUMITATE_ANNUAL - ts_used)
@@ -72,12 +74,18 @@ def render_nisa_section(monthly_budget: float = 30_000) -> None:
     with sc1:
         monthly = st.number_input(
             "毎月の積立額（円）",
-            min_value=0, value=int(monthly_budget), step=1_000, key="nisa_monthly",
+            min_value=0, value=int(saved.get("monthly", monthly_budget)), step=1_000,
+            key="nisa_monthly",
         )
     with sc2:
-        rate = st.slider("年間想定利回り（%）", 1, 15, 5, key="nisa_rate")
+        rate = st.slider("年間想定利回り（%）", 1, 15, int(saved.get("rate", 5)), key="nisa_rate")
     with sc3:
-        years = st.slider("積立期間（年）", 1, 40, 30, key="nisa_years")
+        years = st.slider("積立期間（年）", 1, 40, int(saved.get("years", 30)), key="nisa_years")
+
+    set_setting("nisa", {
+        "ts_used": ts_used, "gr_used": gr_used, "lifetime_used": lifetime_used,
+        "monthly": monthly, "rate": rate, "years": years,
+    })
 
     r_m = rate / 100 / 12
     year_labels = list(range(1, years + 1))
