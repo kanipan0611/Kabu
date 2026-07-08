@@ -12,6 +12,7 @@
 import streamlit as st
 
 from auto_trader import render_auto_trader_section
+from backtest import render_backtest_section
 from dashboard import render_dashboard
 from finance_planner import render_finance_sidebar
 from fundamentals import render_fundamentals_section
@@ -102,3 +103,6 @@ with tab_analysis:
 with tab_auto:
     with st.container(border=True):
         render_auto_trader_section(safe_budget=safe_budget)
+    st.write("")
+    with st.container(border=True):
+        render_backtest_section()
