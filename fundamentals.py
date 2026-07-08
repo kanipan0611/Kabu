@@ -58,7 +58,7 @@ def claude_commentary(api_key: str, ticker: str, per, pbr, roe, memo: str) -> st
         f"投資家自身のメモ: {memo or '(なし)'}\n"
     )
     message = client.messages.create(
-        model="claude-sonnet-4-5",
+        model="claude-fable-5",
         max_tokens=600,
         messages=[{"role": "user", "content": prompt}],
     )

@@ -1,5 +1,7 @@
 """ポートフォリオ（資産配分）の入力と円グラフ表示。"""
 
+from io import StringIO
+
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
@@ -11,8 +13,136 @@ ASSET_COLORS = ["#8FBC8F", "#4682B4", "#DAA520"]
 
 DEFAULT_HOLDINGS = pd.DataFrame([{"銘柄コード": "7203.T", "株数": 0, "購入単価": 0.0}])
 
+# Rakuten CSV: possible column name variants → canonical names
+_RAKUTEN_COL_MAP = {
+    "銘柄コード": "銘柄コード",
+    "コード": "銘柄コード",
+    "銘柄名": "銘柄名",
+    "保有数量": "株数",
+    "数量": "株数",
+    "平均取得単価": "購入単価",
+    "取得単価": "購入単価",
+    "平均取得価格": "購入単価",
+    "取得金額": None,  # ignore
+}
+_RAKUTEN_HEADER_KEYWORDS = {"銘柄コード", "コード", "銘柄名", "保有数量", "数量"}
 
-def render_portfolio_section() -> None:
+
+def parse_rakuten_holdings_csv(file) -> pd.DataFrame | None:
+    """楽天証券エクスポートCSVを解析し、銘柄コード・銘柄名・株数・購入単価のDataFrameを返す。"""
+    try:
+        content = file.read()
+        try:
+            text = content.decode("cp932")
+        except (UnicodeDecodeError, AttributeError):
+            text = content.decode("utf-8", errors="replace")
+
+        lines = text.splitlines()
+
+        # Find the first row that looks like the data header
+        header_idx = None
+        for i, line in enumerate(lines):
+            cols = {c.strip() for c in line.split(",")}
+            if cols & _RAKUTEN_HEADER_KEYWORDS:
+                header_idx = i
+                break
+
+        if header_idx is None:
+            return None
+
+        data_str = "\n".join(lines[header_idx:])
+        df = pd.read_csv(StringIO(data_str))
+
+        # Rename columns to canonical names, drop unknowns
+        rename = {k: v for k, v in _RAKUTEN_COL_MAP.items() if k in df.columns and v is not None}
+        df = df.rename(columns=rename)
+
+        keep = [c for c in ["銘柄コード", "銘柄名", "株数", "購入単価"] if c in df.columns]
+        df = df[keep].copy()
+
+        df["銘柄コード"] = df["銘柄コード"].astype(str).str.strip()
+        # Drop totals / metadata rows (codes that don't start with alphanumeric)
+        df = df[df["銘柄コード"].str.match(r"^[0-9A-Za-z]", na=False)]
+        df = df.dropna(subset=["銘柄コード"])
+
+        return df if not df.empty else None
+    except Exception:
+        return None
+
+
+def render_rakuten_import_section() -> None:
+    """楽天証券CSVをアップロードして保有株の損益を確認するセクション。"""
+    st.subheader("📥 楽天証券 保有株CSVインポート")
+    st.caption(
+        "楽天証券の「保有証券一覧」からCSVをダウンロードしてアップロードしてください。"
+        "スクレイピングは行わず、CSVファイルの内容だけで処理します。"
+    )
+
+    uploaded = st.file_uploader(
+        "楽天証券 保有証券CSV（Shift-JIS/cp932）",
+        type=["csv"],
+        key="rakuten_csv_upload",
+        help="楽天証券の「口座管理」→「保有証券」画面からダウンロードしたCSVファイル",
+    )
+
+    if uploaded is None:
+        st.info("CSVファイルをアップロードすると、保有銘柄と損益が自動計算されます。")
+        return
+
+    df = parse_rakuten_holdings_csv(uploaded)
+    if df is None or df.empty:
+        st.error(
+            "CSVの解析に失敗しました。"
+            "楽天証券からエクスポートしたCSVファイルか確認してください（文字コード: Shift-JIS）。"
+        )
+        return
+
+    st.success(f"{len(df)}銘柄を読み込みました。")
+    st.dataframe(df, hide_index=True, use_container_width=True)
+
+    if "株数" not in df.columns:
+        return
+
+    with st.spinner("現在値と損益を取得中..."):
+        rows = []
+        for _, row in df.iterrows():
+            ticker = str(row.get("銘柄コード", "")).strip()
+            shares = float(row.get("株数", 0) or 0)
+            purchase_price = float(row.get("購入単価", 0) or 0)
+            if not ticker or shares <= 0:
+                continue
+            try:
+                info = calculate_trailing_dividend_yield(ticker)
+                current = info.get("price")
+                if current is None:
+                    continue
+                entry = {
+                    "銘柄コード": ticker,
+                    "銘柄名": row.get("銘柄名", ""),
+                    "株数": int(shares),
+                    "現在値": round(current, 1),
+                    "評価額": round(current * shares, 0),
+                }
+                if purchase_price > 0:
+                    pl_yen = (current - purchase_price) * shares
+                    pl_pct = (current - purchase_price) / purchase_price * 100
+                    entry["取得単価"] = purchase_price
+                    entry["損益(円)"] = round(pl_yen, 0)
+                    entry["損益(%)"] = round(pl_pct, 2)
+                rows.append(entry)
+            except Exception:
+                pass
+
+    if rows:
+        result_df = pd.DataFrame(rows)
+        st.dataframe(result_df, hide_index=True, use_container_width=True)
+        total_val = sum(r["評価額"] for r in rows)
+        st.metric("合計評価額", f"{total_val:,.0f}円")
+    else:
+        st.caption("現在値の取得に失敗しました。しばらくしてから再試行してください。")
+
+
+def render_portfolio_section(safe_budget: float = 0.0) -> None:
     st.header("🥧 ポートフォリオ可視化")
     st.caption("保有額（または投資予定額）を入力すると、資産配分が円グラフで確認できます。")
 
@@ -53,6 +183,15 @@ def render_portfolio_section() -> None:
     df = pd.DataFrame({"資産クラス": ASSET_CATEGORIES, "金額（円）": amounts})
     df["割合"] = (df["金額（円）"] / total * 100).round(1).astype(str) + "%"
     st.dataframe(df, hide_index=True, use_container_width=True)
+
+    # Budget ratio: compare total portfolio to monthly investable budget
+    if safe_budget > 0:
+        months_equiv = total / safe_budget
+        bm1, bm2 = st.columns(2)
+        with bm1:
+            st.metric("月間投資可能額（財務設定より）", f"{safe_budget:,.0f}円")
+        with bm2:
+            st.metric("評価額は月間投資可能額の", f"{months_equiv:.1f}ヶ月分")
 
     render_holdings_summary()
 

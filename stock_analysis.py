@@ -21,6 +21,12 @@ PERIOD_PRESETS = {
 }
 SHORT_PERIOD_LABELS = {"1日", "1週間", "1ヶ月"}
 
+MARKET_TICKERS = {
+    "日経225": "^N225",
+    "S&P500": "^GSPC",
+    "NYダウ": "^DJI",
+}
+
 _JP_TICKER_RE = re.compile(r"^[0-9][0-9A-Z]{3}$")
 
 
@@ -73,6 +79,47 @@ def fetch_company_info(ticker: str) -> dict:
         return yf.Ticker(normalize_ticker(ticker)).info or {}
     except Exception:
         return {}
+
+
+@st.cache_data(ttl=60 * 10, show_spinner=False)
+def fetch_market_overview() -> dict:
+    """主要3指数の現在値・前日比を取得する。"""
+    result = {}
+    for name, sym in MARKET_TICKERS.items():
+        try:
+            df = yf.Ticker(sym).history(period="2d", interval="1d")
+            df = df[df["Close"].notna()]
+            if len(df) >= 2:
+                cur = float(df["Close"].iloc[-1])
+                prev = float(df["Close"].iloc[-2])
+                result[name] = {"price": cur, "chg_pct": (cur - prev) / prev * 100}
+            elif len(df) == 1:
+                result[name] = {"price": float(df["Close"].iloc[-1]), "chg_pct": None}
+            else:
+                result[name] = {"price": None, "chg_pct": None}
+        except Exception:
+            result[name] = {"price": None, "chg_pct": None}
+    return result
+
+
+def render_market_overview() -> None:
+    """主要3指数をページ上部にコンパクトに表示する。"""
+    data = fetch_market_overview()
+    cols = st.columns(len(data) + 1)
+    for col, (name, info) in zip(cols, data.items()):
+        with col:
+            price = info["price"]
+            chg_pct = info["chg_pct"]
+            if price is None:
+                st.metric(name, "—")
+            elif chg_pct is None:
+                st.metric(name, f"{price:,.0f}")
+            else:
+                st.metric(name, f"{price:,.0f}", delta=f"{chg_pct:+.2f}%")
+    with cols[-1]:
+        if st.button("🔄", key="market_overview_refresh", help="指数を更新"):
+            fetch_market_overview.clear()
+            st.rerun()
 
 
 def fetch_fundamentals(ticker: str) -> dict:
@@ -142,7 +189,7 @@ def claude_news_commentary(api_key: str, ticker: str, profile: dict, news_items:
         f"直近のニュース見出し:\n{headlines}\n"
     )
     message = client.messages.create(
-        model="claude-sonnet-4-5",
+        model="claude-fable-5",
         max_tokens=500,
         messages=[{"role": "user", "content": prompt}],
     )
@@ -235,25 +282,58 @@ def calculate_rsi(close: pd.Series, window: int = 14) -> pd.Series:
     return 100 - (100 / (1 + rs))
 
 
-def add_indicators(df: pd.DataFrame, sma_short: int, sma_long: int) -> pd.DataFrame:
+def add_indicators(
+    df: pd.DataFrame,
+    sma_short: int,
+    sma_long: int,
+    show_bb: bool = False,
+    show_macd: bool = False,
+) -> pd.DataFrame:
     df = df.copy()
     df["SMA_short"] = df["Close"].rolling(sma_short).mean()
     df["SMA_long"] = df["Close"].rolling(sma_long).mean()
     df["RSI"] = calculate_rsi(df["Close"])
+    if show_bb:
+        bb_window = 20
+        df["BB_mid"] = df["Close"].rolling(bb_window).mean()
+        bb_std = df["Close"].rolling(bb_window).std()
+        df["BB_upper"] = df["BB_mid"] + 2 * bb_std
+        df["BB_lower"] = df["BB_mid"] - 2 * bb_std
+    if show_macd:
+        ema12 = df["Close"].ewm(span=12, adjust=False).mean()
+        ema26 = df["Close"].ewm(span=26, adjust=False).mean()
+        df["MACD"] = ema12 - ema26
+        df["MACD_signal"] = df["MACD"].ewm(span=9, adjust=False).mean()
+        df["MACD_hist"] = df["MACD"] - df["MACD_signal"]
     return df
 
 
 def build_chart(
-    df: pd.DataFrame, sma_short: int, sma_long: int, ticker: str, period_label: str
+    df: pd.DataFrame,
+    sma_short: int,
+    sma_long: int,
+    ticker: str,
+    period_label: str,
+    show_bb: bool = False,
+    show_macd: bool = False,
 ) -> go.Figure:
+    n_rows = 3 if show_macd else 2
+    row_heights = [0.55, 0.2, 0.25] if show_macd else [0.7, 0.3]
+    subplot_titles = (
+        (f"{ticker} ローソク足チャート", "RSI (14)", "MACD (12/26/9)")
+        if show_macd
+        else (f"{ticker} ローソク足チャート", "RSI (14)")
+    )
     fig = make_subplots(
-        rows=2,
+        rows=n_rows,
         cols=1,
         shared_xaxes=True,
-        row_heights=[0.7, 0.3],
-        vertical_spacing=0.06,
-        subplot_titles=(f"{ticker} ローソク足チャート", "RSI (14)"),
+        row_heights=row_heights,
+        vertical_spacing=0.05,
+        subplot_titles=subplot_titles,
     )
+
+    # Candlestick
     fig.add_trace(
         go.Candlestick(
             x=df.index, open=df["Open"], high=df["High"], low=df["Low"], close=df["Close"],
@@ -261,6 +341,7 @@ def build_chart(
         ),
         row=1, col=1,
     )
+    # SMA lines
     fig.add_trace(
         go.Scatter(x=df.index, y=df["SMA_short"], name=f"SMA{sma_short}", line=dict(width=1)),
         row=1, col=1,
@@ -269,14 +350,62 @@ def build_chart(
         go.Scatter(x=df.index, y=df["SMA_long"], name=f"SMA{sma_long}", line=dict(width=1)),
         row=1, col=1,
     )
+
+    # Bollinger Bands — upper first, then lower with fill="tonexty" to shade between them
+    if show_bb and "BB_upper" in df.columns:
+        fig.add_trace(
+            go.Scatter(
+                x=df.index, y=df["BB_upper"], name="BB上限",
+                line=dict(dash="dash", color="rgba(128,128,128,0.6)", width=1),
+            ),
+            row=1, col=1,
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=df.index, y=df["BB_lower"], name="BB下限",
+                line=dict(dash="dash", color="rgba(128,128,128,0.6)", width=1),
+                fill="tonexty", fillcolor="rgba(128,128,128,0.1)",
+            ),
+            row=1, col=1,
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=df.index, y=df["BB_mid"], name="BB中心(20)",
+                line=dict(dash="dot", color="rgba(128,128,128,0.8)", width=1),
+            ),
+            row=1, col=1,
+        )
+
+    # RSI
     fig.add_trace(
         go.Scatter(x=df.index, y=df["RSI"], name="RSI", line=dict(width=1, color="purple")),
         row=2, col=1,
     )
     fig.add_hline(y=70, line_dash="dot", line_color="red", row=2, col=1)
     fig.add_hline(y=30, line_dash="dot", line_color="green", row=2, col=1)
+
+    # MACD
+    if show_macd and "MACD" in df.columns:
+        hist_colors = [
+            "#2ca02c" if v >= 0 else "#d62728"
+            for v in df["MACD_hist"].fillna(0)
+        ]
+        fig.add_trace(
+            go.Bar(x=df.index, y=df["MACD_hist"], name="ヒストグラム", marker_color=hist_colors),
+            row=3, col=1,
+        )
+        fig.add_trace(
+            go.Scatter(x=df.index, y=df["MACD"], name="MACD", line=dict(color="#1f77b4", width=1)),
+            row=3, col=1,
+        )
+        fig.add_trace(
+            go.Scatter(x=df.index, y=df["MACD_signal"], name="シグナル", line=dict(color="#ff7f0e", width=1)),
+            row=3, col=1,
+        )
+
+    chart_height = 750 if show_macd else 650
     fig.update_layout(
-        height=650,
+        height=chart_height,
         xaxis_rangeslider_visible=False,
         legend=dict(orientation="h", yanchor="bottom", y=1.02),
         margin=dict(t=60, b=20),
@@ -341,6 +470,14 @@ def render_single_stock_panel(
         sma_long = st.number_input(
             "長期移動平均(本)", min_value=20, max_value=200, value=75, key=f"{key_prefix}_sma_long"
         )
+
+    # Indicator toggles
+    ind_col1, ind_col2 = st.columns(2)
+    with ind_col1:
+        show_bb = st.checkbox("ボリンジャーバンド(20)", value=False, key=f"{key_prefix}_show_bb")
+    with ind_col2:
+        show_macd = st.checkbox("MACD(12/26/9)", value=False, key=f"{key_prefix}_show_macd")
+
     period, interval = PERIOD_PRESETS[period_label]
 
     with st.popover("🔍 銘柄コードが分からない場合は企業名で検索"):
@@ -374,9 +511,12 @@ def render_single_stock_panel(
         st.warning("データが見つかりませんでした。銘柄コードを確認してください。")
         return result
 
-    df = add_indicators(df, sma_short, sma_long)
+    # Save for cross-tab use (e.g. analysis notes tab default ticker)
+    st.session_state["last_analyzed_ticker"] = ticker
+
+    df = add_indicators(df, sma_short, sma_long, show_bb=show_bb, show_macd=show_macd)
     st.plotly_chart(
-        build_chart(df, sma_short, sma_long, ticker, period_label),
+        build_chart(df, sma_short, sma_long, ticker, period_label, show_bb=show_bb, show_macd=show_macd),
         use_container_width=True,
         config={"scrollZoom": False, "displayModeBar": False, "doubleClickDelay": 1000},
     )
@@ -387,33 +527,43 @@ def render_single_stock_panel(
 
     st.markdown("**💴 配当情報（自動取得）**")
     div_info = calculate_trailing_dividend_yield(ticker, current_price=df["Close"].iloc[-1])
+    div_yield = None
     if div_info["yield_pct"] is None:
         st.caption("配当データを取得できませんでした。")
     else:
-        result["dividend_yield"] = div_info["yield_pct"]
-        st.metric("配当利回り（直近1年実績）", f"{div_info['yield_pct']:.2f}%")
-        st.caption(dividend_hint(div_info["yield_pct"]))
+        div_yield = div_info["yield_pct"]
+        result["dividend_yield"] = div_yield
+        st.metric("配当利回り（直近1年実績）", f"{div_yield:.2f}%")
+        st.caption(dividend_hint(div_yield))
+
+    # Auto scoring — always fetch fundamentals silently for rule-based analysis
+    auto_fund = fetch_fundamentals(ticker)
+    result["per"] = auto_fund["per"]
+    result["pbr"] = auto_fund["pbr"]
+    result["roe"] = auto_fund["roe"]
+
+    from scoring import render_auto_analysis
+    render_auto_analysis(df, auto_fund["per"], auto_fund["pbr"], auto_fund["roe"], div_yield)
 
     render_news_section(ticker, key_prefix)
 
     if show_fundamentals:
         st.markdown("**📋 財務指標（自動取得・比較用）**")
-        auto = fetch_fundamentals(ticker)
         st.caption("初期値はyfinanceからの自動取得値です。気になる場合は書き換えて構いません。")
         c1, c2, c3 = st.columns(3)
         with c1:
             result["per"] = st.number_input(
-                "PER（倍）", min_value=0.0, value=float(auto["per"] or 0.0), step=0.1,
+                "PER（倍）", min_value=0.0, value=float(auto_fund["per"] or 0.0), step=0.1,
                 key=f"{key_prefix}_per_{ticker}",
             )
         with c2:
             result["pbr"] = st.number_input(
-                "PBR（倍）", min_value=0.0, value=float(auto["pbr"] or 0.0), step=0.1,
+                "PBR（倍）", min_value=0.0, value=float(auto_fund["pbr"] or 0.0), step=0.1,
                 key=f"{key_prefix}_pbr_{ticker}",
             )
         with c3:
             result["roe"] = st.number_input(
-                "ROE（%）", min_value=0.0, value=float(auto["roe"] or 0.0), step=0.1,
+                "ROE（%）", min_value=0.0, value=float(auto_fund["roe"] or 0.0), step=0.1,
                 key=f"{key_prefix}_roe_{ticker}",
             )
 

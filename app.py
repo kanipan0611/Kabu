@@ -1,18 +1,21 @@
 """投資学習 & 財務管理ダッシュボード。
 
-セクション構成：
-  1. マイ・ファイナンス設定（サイドバー）
-  2. ポートフォリオ可視化
-  3. インタラクティブ・チャート分析（1銘柄 / 2銘柄比較モード）
-  4. 分析ノート & ファンダメンタルズ入力
+タブ構成：
+  1. 📈 チャート     — インタラクティブ銘柄チャート・自動スコアリング
+  2. 💼 資産管理    — ポートフォリオ可視化・楽天証券CSV・ウォッチリスト
+  3. 🌱 新NISA     — 枠管理・複利シミュレーション
+  4. 🔬 分析ツール   — ファンダメンタルズ・投資シミュレーター
 """
 
 import streamlit as st
 
 from finance_planner import render_finance_sidebar
 from fundamentals import render_fundamentals_section
-from portfolio import render_portfolio_section
-from stock_analysis import render_stock_section
+from nisa_planner import render_nisa_section
+from portfolio import render_portfolio_section, render_rakuten_import_section
+from simulator import render_simulator_section
+from stock_analysis import render_market_overview, render_stock_section
+from watchlist import render_watchlist_section
 
 st.set_page_config(page_title="Nest Egg — 投資学習ダッシュボード", page_icon="🥚", layout="wide")
 
@@ -27,17 +30,45 @@ st.caption(
     "表示内容は教育目的の参考情報であり、投資助言ではありません。"
 )
 
-render_finance_sidebar()
+# ── サイドバー（財務設定）──────────────────────────────────────
+finance_result = render_finance_sidebar()
+safe_budget = finance_result.get("safe_budget", 0.0) if finance_result else 0.0
+monthly_budget = finance_result.get("monthly_surplus", 30_000) if finance_result else 30_000
 
+# ── マーケット概況（常時表示）─────────────────────────────────
 with st.container(border=True):
-    render_portfolio_section()
+    st.caption("📊 マーケット概況")
+    render_market_overview()
 
 st.write("")
 
-with st.container(border=True):
-    ticker = render_stock_section()
+# ── メインタブ ─────────────────────────────────────────────────
+tab_chart, tab_assets, tab_nisa, tab_analysis = st.tabs(
+    ["📈 チャート", "💼 資産管理", "🌱 新NISA", "🔬 分析ツール"]
+)
 
-st.write("")
+with tab_chart:
+    with st.container(border=True):
+        render_stock_section()
 
-with st.container(border=True):
-    render_fundamentals_section(default_ticker=ticker or "7203.T")
+with tab_assets:
+    with st.container(border=True):
+        render_portfolio_section(safe_budget=safe_budget)
+    st.write("")
+    with st.container(border=True):
+        render_rakuten_import_section()
+    st.write("")
+    with st.container(border=True):
+        render_watchlist_section()
+
+with tab_nisa:
+    with st.container(border=True):
+        render_nisa_section(monthly_budget=monthly_budget)
+
+with tab_analysis:
+    default_ticker = st.session_state.get("last_analyzed_ticker", "7203.T")
+    with st.container(border=True):
+        render_fundamentals_section(default_ticker=default_ticker)
+    st.write("")
+    with st.container(border=True):
+        render_simulator_section()
