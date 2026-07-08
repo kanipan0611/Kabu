@@ -1,0 +1,11 @@
+# 平日15:40（JST・大引け後）に仮想売買エンジンを自動実行するタイマー
+# ※ vps_setup.shがサーバーのタイムゾーンをAsia/Tokyoに設定している前提
+[Unit]
+Description=Run Nest Egg paper trading signals on weekday market close
+
+[Timer]
+OnCalendar=Mon..Fri 15:40
+Persistent=true
+
+[Install]
+WantedBy=timers.target

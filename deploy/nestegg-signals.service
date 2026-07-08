@@ -1,0 +1,11 @@
+# 仮想売買エンジンを1回実行するサービス（nestegg-signals.timerから起動される）
+[Unit]
+Description=Nest Egg paper trading signals (one shot)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=__USER__
+WorkingDirectory=__APP_DIR__
+ExecStart=__APP_DIR__/.venv/bin/python run_signals.py

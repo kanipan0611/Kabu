@@ -1,0 +1,16 @@
+# Streamlit UI常時起動サービス（vps_setup.shが __APP_DIR__/__USER__ を置換して配置する）
+[Unit]
+Description=Nest Egg Streamlit UI
+After=network.target
+
+[Service]
+Type=simple
+User=__USER__
+WorkingDirectory=__APP_DIR__
+# localhostのみにバインド（インターネット非公開）。アクセスはSSHトンネル経由。
+ExecStart=__APP_DIR__/.venv/bin/streamlit run app.py --server.port 8501 --server.address 127.0.0.1 --server.headless true
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
