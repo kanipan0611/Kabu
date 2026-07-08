@@ -1,0 +1,51 @@
+# 仮想売買シグナルの定期実行ワークフロー ―― 現在は【休眠状態】
+#
+# いまは手動実行（Actionsタブ → paper-signals → Run workflow）しかできません。
+# 定期実行を有効化する手順:
+#   1. 下の `schedule:` ブロックのコメントを外す
+#   2. 設定・ウォッチリストをリポジトリに含める:
+#        git add -f data/user_settings.json data/watchlist.json && git commit && git push
+#      （Actionsのランナーは毎回まっさらな環境なので、UIで作った設定ファイルを
+#        リポジトリ経由で渡す必要があります）
+#
+# 実行結果（data/paper_trading.json）は自動でコミットされ、
+# 取引履歴として蓄積されます。実際の発注は一切行いません。
+
+name: paper-signals
+
+on:
+  workflow_dispatch: {}          # 手動実行のみ（休眠状態）
+  # schedule:
+  #   - cron: "40 6 * * 1-5"    # JST 15:40（UTC 6:40）平日 = 大引け後に1日1回
+
+permissions:
+  contents: write
+
+jobs:
+  run-signals:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run paper trading signals
+        run: python run_signals.py
+
+      - name: Commit updated trading state
+        run: |
+          git config user.name "paper-signals-bot"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -f data/paper_trading.json
+          if git diff --cached --quiet; then
+            echo "変更なし（取引なし）"
+          else
+            git commit -m "chore: update paper trading state [skip ci]"
+            git push
+          fi
