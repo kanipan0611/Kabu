@@ -5,10 +5,12 @@
   2. 💼 資産管理    — ポートフォリオ可視化・楽天証券CSV・ウォッチリスト
   3. 🌱 新NISA     — 枠管理・複利シミュレーション
   4. 🔬 分析ツール   — ファンダメンタルズ・投資シミュレーター
+  5. 🤖 仮想売買    — シグナル判定によるペーパートレード（実発注なし）
 """
 
 import streamlit as st
 
+from auto_trader import render_auto_trader_section
 from finance_planner import render_finance_sidebar
 from fundamentals import render_fundamentals_section
 from nisa_planner import render_nisa_section
@@ -43,8 +45,8 @@ with st.container(border=True):
 st.write("")
 
 # ── メインタブ ─────────────────────────────────────────────────
-tab_chart, tab_assets, tab_nisa, tab_analysis = st.tabs(
-    ["📈 チャート", "💼 資産管理", "🌱 新NISA", "🔬 分析ツール"]
+tab_chart, tab_assets, tab_nisa, tab_analysis, tab_auto = st.tabs(
+    ["📈 チャート", "💼 資産管理", "🌱 新NISA", "🔬 分析ツール", "🤖 仮想売買"]
 )
 
 with tab_chart:
@@ -72,3 +74,7 @@ with tab_analysis:
     st.write("")
     with st.container(border=True):
         render_simulator_section()
+
+with tab_auto:
+    with st.container(border=True):
+        render_auto_trader_section(safe_budget=safe_budget)

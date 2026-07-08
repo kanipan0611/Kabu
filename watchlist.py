@@ -6,6 +6,7 @@ import os
 import pandas as pd
 import streamlit as st
 
+from secrets_utils import get_secret
 from stock_analysis import fetch_price_history, normalize_ticker
 
 _DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
@@ -26,6 +27,11 @@ def _save(tickers: list[str]) -> None:
     os.makedirs(_DATA_DIR, exist_ok=True)
     with open(_WATCHLIST_FILE, "w") as f:
         json.dump(tickers, f)
+
+
+def get_watchlist() -> list[str]:
+    """登録済みウォッチリスト銘柄を返す（他モジュールからの参照用）。"""
+    return _load()
 
 
 def render_watchlist_section() -> None:
@@ -108,3 +114,38 @@ def render_watchlist_section() -> None:
     if st.button("🔄 データ更新", key="watchlist_refresh"):
         fetch_price_history.clear()
         st.rerun()
+
+    # ── 週次サマリー（Claude・オンデマンド） ──
+    if st.button("📰 ウォッチリストの週次サマリーを生成（Claude）", key="watchlist_weekly"):
+        api_key = get_secret("ANTHROPIC_API_KEY")
+        if not api_key:
+            st.caption("ANTHROPIC_API_KEY が未設定のため生成できません。")
+        else:
+            lines = []
+            for ticker in tickers:
+                try:
+                    df = fetch_price_history(ticker, "1mo", "1d")
+                    df = df[df["Close"].notna()]
+                    if len(df) >= 6:
+                        cur, week_ago = df["Close"].iloc[-1], df["Close"].iloc[-6]
+                        lines.append(f"- {ticker}: 現在値{cur:,.0f}円 週間{(cur - week_ago) / week_ago * 100:+.1f}%")
+                    elif not df.empty:
+                        lines.append(f"- {ticker}: 現在値{df['Close'].iloc[-1]:,.0f}円（週間変化は算出不可）")
+                except Exception:
+                    lines.append(f"- {ticker}: データ取得失敗")
+            prompt = (
+                "あなたは投資初心者向けのファイナンス教育アシスタントです。"
+                "以下はウォッチリスト銘柄の直近1週間の値動きです。"
+                "全体の傾向と、特に動きが大きかった銘柄への着目点を、"
+                "初心者にも分かりやすい日本語で300字程度にまとめてください。"
+                "「買い」「売り」のような断定的な助言は避けてください。\n\n"
+                + "\n".join(lines)
+            )
+            try:
+                from claude_client import call_claude
+                with st.spinner("週次サマリーを作成しています..."):
+                    summary, model_used = call_claude(api_key, prompt, max_tokens=600)
+                st.info(summary)
+                st.caption(f"生成モデル: {model_used} ／ 投資助言ではありません。")
+            except Exception as e:
+                st.warning(f"サマリーの生成に失敗しました（{e}）")

@@ -104,6 +104,35 @@ def render_fundamentals_section(default_ticker: str = "7203.T") -> None:
             for line in rule_based_commentary(per or None, pbr or None, roe or None):
                 st.write(f"- {line}")
 
+    # ── 分析メモの添削（Claude・オンデマンド） ──
+    if st.button("✍️ 分析メモを添削してもらう（Claude）", key="memo_review"):
+        if not memo:
+            st.warning("添削するメモが空です。上の欄に分析メモを書いてから押してください。")
+        else:
+            api_key = get_api_key()
+            if not api_key:
+                st.caption("ANTHROPIC_API_KEY が未設定のため添削できません。")
+            else:
+                prompt = (
+                    "あなたは投資初心者の学習を支援するメンターです。"
+                    "以下は初心者が書いた銘柄分析メモです。"
+                    "(1)良い着眼点、(2)抜けている観点、(3)次に調べるとよいこと、の3点を"
+                    "初心者にも分かりやすい日本語で400字程度でフィードバックしてください。"
+                    "励ましつつも、具体的に指摘してください。"
+                    "「買い」「売り」のような断定的な助言は避けてください。\n\n"
+                    f"対象銘柄: {ticker}\n"
+                    f"参考指標: PER {per or '未入力'}倍 / PBR {pbr or '未入力'}倍 / ROE {roe or '未入力'}%\n"
+                    f"分析メモ:\n{memo}\n"
+                )
+                try:
+                    from claude_client import call_claude
+                    with st.spinner("メモを添削しています..."):
+                        feedback, model_used = call_claude(api_key, prompt, max_tokens=800)
+                    st.info(feedback)
+                    st.caption(f"生成モデル: {model_used} ／ 学習用フィードバックであり、投資助言ではありません。")
+                except Exception as e:
+                    st.warning(f"添削の生成に失敗しました（{e}）")
+
     st.markdown("---")
     st.subheader("🗒 分析メモ")
     if get_notion_config()[0] and get_notion_config()[1]:

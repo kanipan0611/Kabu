@@ -3,6 +3,8 @@
 import plotly.graph_objects as go
 import streamlit as st
 
+from secrets_utils import get_secret
+
 TSUMITATE_ANNUAL = 1_200_000   # つみたて投資枠 年120万
 GROWTH_ANNUAL = 2_400_000      # 成長投資枠 年240万
 GROWTH_LIFETIME = 12_000_000   # 成長投資枠 生涯1200万
@@ -154,3 +156,32 @@ def render_nisa_section(monthly_budget: float = 30_000) -> None:
         "※シミュレーションは複利計算（毎月積立）による試算です。"
         "実際の運用成果・税制優遇額は保証されません。"
     )
+
+    # ── プラン相談（Claude・オンデマンド） ──
+    if st.button("🌱 この積立プランについてコメントをもらう（Claude）", key="nisa_advice"):
+        api_key = get_secret("ANTHROPIC_API_KEY")
+        if not api_key:
+            st.caption("ANTHROPIC_API_KEY が未設定のためコメントを生成できません。")
+        else:
+            prompt = (
+                "あなたは投資初心者向けのファイナンス教育アシスタントです。"
+                "以下の新NISAの積立プランについて、想定利回りの現実性・期間設定・"
+                "枠の使い方の観点から気づいた点を、初心者にも分かりやすい日本語で"
+                "400字程度でコメントしてください。"
+                "特定の商品を勧めるような断定的な助言は避けてください。\n\n"
+                f"毎月の積立額: {monthly:,.0f}円（年{annual_invest:,.0f}円）\n"
+                f"想定利回り: 年{rate}%\n"
+                f"積立期間: {years}年\n"
+                f"{years}年後の想定資産: {final_fv:,.0f}円（元本{final_inv:,.0f}円 + 運用益{final_gain:,.0f}円）\n"
+                f"今年のつみたて投資枠 使用額: {ts_used:,.0f}円 / {TSUMITATE_ANNUAL:,.0f}円\n"
+                f"今年の成長投資枠 使用額: {gr_used:,.0f}円 / {GROWTH_ANNUAL:,.0f}円\n"
+                f"生涯累計投資額: {lifetime_used:,.0f}円 / {LIFETIME_TOTAL:,.0f}円\n"
+            )
+            try:
+                from claude_client import call_claude
+                with st.spinner("プランへのコメントを作成しています..."):
+                    advice, model_used = call_claude(api_key, prompt, max_tokens=800)
+                st.info(advice)
+                st.caption(f"生成モデル: {model_used} ／ 投資助言ではありません。")
+            except Exception as e:
+                st.warning(f"コメントの生成に失敗しました（{e}）")

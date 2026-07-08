@@ -4,4 +4,5 @@ pandas>=2.0
 numpy>=1.26
 plotly>=5.22
 anthropic>=0.34
+requests>=2.31
 notion-client>=2.2

@@ -6,6 +6,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from secrets_utils import get_secret
 from stock_analysis import calculate_trailing_dividend_yield
 
 ASSET_CATEGORIES = ["現金", "インデックス投信", "個別株"]
@@ -283,3 +284,38 @@ def render_holdings_summary() -> None:
             st.metric("保有株の損益合計（購入単価入力分）", f"{total_pl:,.0f} 円", delta=f"{pl_pct:.2f}%")
         with col4:
             st.metric("購入額合計 → 現在評価額", f"{total_cost:,.0f} 円 → {total_cost + total_pl:,.0f} 円")
+
+    # ── ポートフォリオ診断（Claude・オンデマンド） ──
+    if st.button("🧭 ポートフォリオ診断を生成（Claude）", key="pf_diagnosis"):
+        api_key = get_secret("ANTHROPIC_API_KEY")
+        if not api_key:
+            st.caption("ANTHROPIC_API_KEY が未設定のため診断を生成できません。")
+        else:
+            cash = st.session_state.get("portfolio_現金", 0)
+            index_fund = st.session_state.get("portfolio_インデックス投信", 0)
+            stocks_amt = st.session_state.get("portfolio_個別株", 0)
+            holdings_lines = "\n".join(
+                f"- {r['銘柄コード']}: {r['株数']}株 現在値{r['現在値']:,.0f}円 "
+                f"配当利回り{r['配当利回り(%)'] or '不明'}%"
+                + (f" 損益{r['損益(%)']:+.1f}%" if r["損益(%)"] is not None else "")
+                for r in rows
+            )
+            prompt = (
+                "あなたは投資初心者向けのファイナンス教育アシスタントです。"
+                "以下のポートフォリオについて、資産配分のバランス・銘柄の集中度・"
+                "配当依存度などの観点から気づいた点を、初心者にも分かりやすい日本語で"
+                "400字程度で診断してください。"
+                "「買い」「売り」のような断定的な助言は避け、"
+                "考えるべき観点の提示に留めてください。\n\n"
+                f"資産配分: 現金{cash:,.0f}円 / インデックス投信{index_fund:,.0f}円 / 個別株{stocks_amt:,.0f}円\n"
+                f"年間想定配当合計: {total_annual_dividend:,.0f}円\n"
+                f"保有個別株:\n{holdings_lines}\n"
+            )
+            try:
+                from claude_client import call_claude
+                with st.spinner("ポートフォリオを診断しています..."):
+                    diagnosis, model_used = call_claude(api_key, prompt, max_tokens=800)
+                st.info(diagnosis)
+                st.caption(f"生成モデル: {model_used} ／ 投資助言ではありません。最終判断は自己責任で。")
+            except Exception as e:
+                st.warning(f"診断の生成に失敗しました（{e}）")

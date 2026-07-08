@@ -42,7 +42,25 @@ def normalize_ticker(ticker: str) -> str:
 
 @st.cache_data(ttl=60 * 5, show_spinner=False)
 def fetch_price_history(ticker: str, period: str, interval: str = "1d") -> pd.DataFrame:
-    return yf.Ticker(normalize_ticker(ticker)).history(period=period, interval=interval)
+    """価格データを取得する。yfinanceが失敗した場合、日足に限り
+    Alpha Vantage / J-Quants（secretsにキー設定時のみ）へ自動フォールバックする。"""
+    code = normalize_ticker(ticker)
+    error: Exception | None = None
+    try:
+        df = yf.Ticker(code).history(period=period, interval=interval)
+    except Exception as e:
+        error = e
+        df = pd.DataFrame()
+
+    if df.empty and interval == "1d":
+        from data_sources import fetch_daily_fallback
+        fallback = fetch_daily_fallback(code, period)
+        if fallback is not None and not fallback.empty:
+            return fallback
+
+    if error is not None and df.empty:
+        raise error
+    return df
 
 
 @st.cache_data(ttl=60 * 30, show_spinner=False)
@@ -600,6 +618,37 @@ def render_stock_section() -> str | None:
             }
         )
         st.dataframe(compare_df, hide_index=True, use_container_width=True)
+
+        # ── 比較講評（Claude・オンデマンド） ──
+        if st.button("🧭 2銘柄の比較講評を生成（Claude）", key="cmp_commentary"):
+            api_key = get_secret("ANTHROPIC_API_KEY")
+            if not api_key:
+                st.caption("ANTHROPIC_API_KEY が未設定のため講評を生成できません。")
+            else:
+                def _fmt(r):
+                    div = r["dividend_yield"]
+                    div_str = f"{div:.2f}" if div is not None else "不明"
+                    return (
+                        f"PER {r['per'] or '不明'}倍 / PBR {r['pbr'] or '不明'}倍 / "
+                        f"ROE {r['roe'] or '不明'}% / 配当利回り {div_str}%"
+                    )
+                prompt = (
+                    "あなたは投資初心者向けのファイナンス教育アシスタントです。"
+                    "以下の2銘柄の財務指標を比較して、それぞれどんなタイプの銘柄か、"
+                    "どういう視点で選び分けるとよいかを、初心者にも分かりやすい日本語で"
+                    "400字程度で講評してください。"
+                    "「どちらを買うべき」のような断定的な助言は避けてください。\n\n"
+                    f"銘柄A（{result_a['ticker']}）: {_fmt(result_a)}\n"
+                    f"銘柄B（{result_b['ticker']}）: {_fmt(result_b)}\n"
+                )
+                try:
+                    from claude_client import call_claude
+                    with st.spinner("比較講評を作成しています..."):
+                        commentary, model_used = call_claude(api_key, prompt, max_tokens=800)
+                    st.info(commentary)
+                    st.caption(f"生成モデル: {model_used} ／ 投資助言ではありません。")
+                except Exception as e:
+                    st.warning(f"講評の生成に失敗しました（{e}）")
 
     st.caption("これは教育目的の参考情報であり、投資助言ではありません。最終判断は自己責任で行ってください。")
     return result_a["ticker"]
