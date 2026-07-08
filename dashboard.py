@@ -4,6 +4,8 @@
 「今日の状況」をまとめて表示する。詳細な操作は各タブで行う。
 """
 
+from datetime import date
+
 import pandas as pd
 import streamlit as st
 
@@ -12,6 +14,24 @@ from nisa_planner import LIFETIME_TOTAL, TSUMITATE_ANNUAL
 from stock_analysis import fetch_price_history
 from user_store import get_setting
 from watchlist import get_watchlist
+
+
+_DAILY_TIPS = [
+    "「安くなったから買う」の前に「なぜ安くなったか」を調べる。理由のない下落はほぼ存在しません。",
+    "積立投資の最大の敵は暴落ではなく「途中でやめること」。相場が荒れた日ほど自動積立の設定を触らない。",
+    "配当利回りが異常に高い銘柄は、株価が下がって利回りが「見かけ上」上がっているだけのことが多い。分子より分母を疑う。",
+    "PERは業種によって相場が違う。IT企業と銀行のPERを直接比べても意味がない。同業他社と比べる。",
+    "損切りラインは買う前に決める。買った後に決めようとすると、人間は必ず先延ばしにする。",
+    "取引記録をつけた人とつけない人では、1年後の上達がまるで違う。負けた取引ほどメモを残す。",
+    "ニュースで話題になった時点で、その情報は株価に織り込まれていることが多い。飛びつく前に一晩置く。",
+    "手数料と税金はリターンを確実に削る唯一の要素。売買回数を減らすことは、それ自体が有効な戦略。",
+    "複利の効果は最初の数年ほとんど見えない。10年目から急に効いてくる。やめないことが最大の戦略。",
+    "生活防衛資金（生活費の6ヶ月分）ができるまでは、投資額を増やさない。暴落時に売らずに済む人はここが違う。",
+    "「みんなが強気のとき」が一番危ない。逆に悲観一色のときに淡々と積み立てた人が報われてきたのが市場の歴史。",
+    "個別株で市場平均（インデックス）に勝ち続けるのはプロでも難しい。まず土台をインデックスで作り、個別株は学習と楽しみの範囲で。",
+    "上がった理由を説明できない株は、下がった理由もわからないまま狼狽売りすることになる。買う前に一言で説明できるか自問する。",
+    "バックテストで完璧な成績のルールほど疑う。過去に合わせ込んだだけのルールは、未来では機能しないことが多い。",
+]
 
 
 def _price_and_change(ticker: str) -> tuple[float | None, float | None]:
@@ -32,6 +52,9 @@ def _price_and_change(ticker: str) -> tuple[float | None, float | None]:
 
 def render_dashboard() -> None:
     st.header("🏠 ホーム")
+
+    tip = _DAILY_TIPS[date.today().toordinal() % len(_DAILY_TIPS)]
+    st.info(f"💡 **今日のワンポイント**: {tip}")
 
     alloc = get_setting("portfolio_allocation", {})
     holdings = [

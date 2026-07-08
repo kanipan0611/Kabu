@@ -122,6 +122,52 @@ def run_backtest(
     }
 
 
+def _one_point_advice(result: dict, stop_loss_pct: float, take_profit_pct: float) -> list[str]:
+    """結果のパターンから「次に何を触るべきか」のヒントを最大2つ返す（ルールベース）。"""
+    tips: list[str] = []
+    ret = result["total_return_pct"]
+    bh = result["buy_hold_return_pct"]
+    n = result["n_trades"]
+    win = result["win_rate_pct"]
+    dd = result["max_drawdown_pct"]
+
+    if n == 0:
+        return ["一度も取引が発生していません。検証期間を伸ばすか、移動平均の日数を短くしてシグナルが出やすい条件から始めてみましょう。"]
+
+    if ret < bh and win is not None and win < 40:
+        tips.append(
+            f"典型的な「往復ビンタ」型です。損切りライン（{stop_loss_pct:.0f}%）が銘柄の普段の振れ幅より狭いと、"
+            "下がるたびに損切り→直後の反発を取り逃す、を繰り返します。"
+            "損切りを広げるか、長期の移動平均でゆっくりしたトレンドだけを追ってみましょう。"
+        )
+    if ret < bh and win is not None and win >= 55:
+        tips.append(
+            f"勝率は高いのにトータルで負ける「コツコツドカン」型です。利確（+{take_profit_pct:.0f}%）が早すぎて"
+            "利益が小さく、たまの大負けで全部持っていかれています。利確ラインを広げて損小利大に寄せましょう。"
+        )
+    if dd <= -30:
+        tips.append(
+            f"最大ドローダウン{dd:.0f}%は、実際のお金なら夜眠れないレベルです。"
+            "1回の購入上限を初期資金の一部（例: 3分の1）に抑えると、同じルールでも下落が緩やかになります。"
+        )
+    if ret > bh and n >= 10:
+        tips.append(
+            "バイ＆ホールドに勝っています。ただしこの銘柄・この期間に偶然ハマっただけの可能性（過剰最適化）があるので、"
+            "同じパラメータのまま別の銘柄と別の期間で再現するか必ず確認しましょう。再現したら本物に近づきます。"
+        )
+    if n < 10:
+        tips.append(
+            f"取引回数が{n}回では、結果は偶然の域を出ません。検証期間を5年・10年に伸ばして、"
+            "最低でも20〜30回の取引でルールを評価しましょう。"
+        )
+    if not tips:
+        tips.append(
+            "大きな破綻のない結果です。ここからは一度に1つだけパラメータを変えて再実行し、"
+            "「どの数字が結果に一番効くか」を体感してみましょう。感度が高すぎるルールは本番で脆くなります。"
+        )
+    return tips[:2]
+
+
 def render_backtest_section() -> None:
     st.header("🧪 バックテスト — 自分のルールを過去データで検証する")
     st.caption(
@@ -215,6 +261,10 @@ def render_backtest_section() -> None:
         st.info("この期間・パラメータでは一度も取引が発生しませんでした。期間を伸ばすか、条件を緩めてみてください。")
     if result["open_position"]:
         st.caption("※ 検証期間の最終日時点でポジションを保有したまま終了しています（含み損益は最終資産に反映済み）。")
+
+    # ── ワンポイントアドバイス（結果に応じたルールベースのヒント）──
+    for tip in _one_point_advice(result, stop_loss, take_profit):
+        st.success(f"💡 **ワンポイントアドバイス**: {tip}")
 
     # ── 学習ガイド ──
     st.markdown("**🔎 結果の読み方（チェックリスト）**")
