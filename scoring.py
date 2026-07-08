@@ -100,6 +100,14 @@ def _grade(score):
     return "D"
 
 
+def compute_value_score(per, pbr, roe) -> float | None:
+    """PER・PBR・ROEから0〜100のバリュー評価を返す（全指標データなしならNone）。
+
+    仮想売買エンジンのファンダメンタルズフィルターなど、他モジュールからも使う。
+    """
+    return _avg([_score_per(per)[0], _score_pbr(pbr)[0], _score_roe(roe)[0]])
+
+
 def compute_stock_score(
     df: pd.DataFrame, per, pbr, roe, div_yield
 ) -> dict:

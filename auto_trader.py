@@ -15,7 +15,8 @@ from datetime import datetime
 import pandas as pd
 import streamlit as st
 
-from stock_analysis import add_indicators, fetch_price_history, normalize_ticker
+from scoring import compute_value_score
+from stock_analysis import add_indicators, fetch_fundamentals, fetch_price_history, normalize_ticker
 from watchlist import get_watchlist
 
 _DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
@@ -99,8 +100,14 @@ def run_paper_trading(
     take_profit_pct: float,
     sma_short: int,
     sma_long: int,
+    fundamental_min: float | None = None,
 ) -> tuple[dict, list[dict]]:
-    """各銘柄のシグナルを評価し、仮想売買を実行した新しい状態と実行ログを返す。"""
+    """各銘柄のシグナルを評価し、仮想売買を実行した新しい状態と実行ログを返す。
+
+    fundamental_minを指定すると、テクニカルの買いシグナルが出ても
+    PER/PBR/ROEによるバリュー評価がその点数未満の銘柄は購入しない
+    （ファンダメンタル分析＋テクニカル分析の併用）。
+    """
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     actions: list[dict] = []
 
@@ -152,6 +159,24 @@ def run_paper_trading(
 
         # ── 未保有: 買いシグナル ──
         if signal == "buy":
+            # ファンダメンタルズフィルター（PER/PBR/ROEのバリュー評価）
+            if fundamental_min is not None:
+                fund = fetch_fundamentals(code)
+                value_score = compute_value_score(fund["per"], fund["pbr"], fund["roe"])
+                if value_score is not None and value_score < fundamental_min:
+                    actions.append({
+                        "銘柄": code, "判定": "見送り",
+                        "理由": (
+                            f"買いシグナルはあるが、バリュー評価{value_score:.0f}点が"
+                            f"基準（{fundamental_min:.0f}点）未満のため購入せず"
+                        ),
+                    })
+                    continue
+                if value_score is not None:
+                    reasons.append(f"バリュー評価{value_score:.0f}点（PER/PBR/ROE）")
+                else:
+                    reasons.append("ファンダ指標データなし（テクニカルのみで判定）")
+
             shares = int(min(per_trade_max, state["cash"]) // price)
             if shares <= 0:
                 actions.append({"銘柄": code, "判定": "見送り", "理由": "予算不足"})
@@ -176,7 +201,8 @@ def run_paper_trading(
 def render_auto_trader_section(safe_budget: float = 0.0) -> None:
     st.header("🤖 仮想自動売買（ペーパートレード）")
     st.caption(
-        "ウォッチリストの銘柄に対して、移動平均のクロスとRSIから売買シグナルを判定し、"
+        "ウォッチリストの銘柄に対して、テクニカル分析（移動平均のクロス・RSI）と"
+        "ファンダメンタル分析（PER/PBR/ROEのバリュー評価）を組み合わせて売買シグナルを判定し、"
         "決めた予算の範囲内で**仮想的に**売買します。実際の注文は一切行いません。"
         "自動売買の仕組み（シグナル・予算管理・損切り/利確）を、お金を賭けずに学ぶための機能です。"
     )
@@ -207,6 +233,17 @@ def render_auto_trader_section(safe_budget: float = 0.0) -> None:
         sma_short = st.number_input("短期移動平均(日)", 5, 60, 25, key="pt_sma_s")
         sma_long = st.number_input("長期移動平均(日)", 20, 200, 75, key="pt_sma_l")
 
+    use_fund = st.checkbox(
+        "🧾 ファンダメンタルズフィルターを使う（PER/PBR/ROEのバリュー評価が低い銘柄は買わない）",
+        value=True, key="pt_use_fund",
+    )
+    fundamental_min = None
+    if use_fund:
+        fundamental_min = st.slider(
+            "バリュー評価の最低ライン（点）", 0, 100, 40, key="pt_fund_min",
+            help="PER・PBR・ROEから算出する0〜100点の評価。40点未満は割高・低効率とみなして購入を見送ります。",
+        )
+
     state = _load_state()
 
     btn_col1, btn_col2 = st.columns(2)
@@ -218,6 +255,7 @@ def render_auto_trader_section(safe_budget: float = 0.0) -> None:
                 state, actions = run_paper_trading(
                     state, tickers, per_trade_max, stop_loss, take_profit,
                     int(sma_short), int(sma_long),
+                    fundamental_min=fundamental_min,
                 )
             _save_state(state)
             st.session_state["pt_last_actions"] = actions
