@@ -172,10 +172,9 @@ def fetch_company_news(ticker: str, limit: int = 5) -> list[dict]:
     return items
 
 
-def claude_news_commentary(api_key: str, ticker: str, profile: dict, news_items: list[dict]) -> str:
-    import anthropic
+def claude_news_commentary(api_key: str, ticker: str, profile: dict, news_items: list[dict]) -> tuple[str, str]:
+    from claude_client import call_claude
 
-    client = anthropic.Anthropic(api_key=api_key)
     headlines = "\n".join(f"- {n['title']}（{n['publisher']}）" for n in news_items) or "(関連ニュースなし)"
     prompt = (
         "あなたは投資初心者向けのファイナンス教育アシスタントです。"
@@ -188,12 +187,7 @@ def claude_news_commentary(api_key: str, ticker: str, profile: dict, news_items:
         f"業種: {profile.get('industry') or '不明'}\n"
         f"直近のニュース見出し:\n{headlines}\n"
     )
-    message = client.messages.create(
-        model="claude-fable-5",
-        max_tokens=500,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    return message.content[0].text
+    return call_claude(api_key, prompt, max_tokens=500)
 
 
 def render_news_section(ticker: str, key_prefix: str) -> None:
@@ -218,8 +212,9 @@ def render_news_section(ticker: str, key_prefix: str) -> None:
         if api_key:
             try:
                 with st.spinner("Claudeが見解を作成しています..."):
-                    commentary = claude_news_commentary(api_key, ticker, profile, news_items)
+                    commentary, model_used = claude_news_commentary(api_key, ticker, profile, news_items)
                 st.info(commentary)
+                st.caption(f"生成モデル: {model_used}")
             except Exception as e:
                 st.warning(f"Claude APIの呼び出しに失敗しました（{e}）")
         else:

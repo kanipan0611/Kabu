@@ -42,10 +42,9 @@ def rule_based_commentary(per: float | None, pbr: float | None, roe: float | Non
     return lines or ["値を入力すると、ここに簡易的な評価が表示されます。"]
 
 
-def claude_commentary(api_key: str, ticker: str, per, pbr, roe, memo: str) -> str:
-    import anthropic
+def claude_commentary(api_key: str, ticker: str, per, pbr, roe, memo: str) -> tuple[str, str]:
+    from claude_client import call_claude
 
-    client = anthropic.Anthropic(api_key=api_key)
     prompt = (
         "あなたは投資初心者向けのファイナンス教育アシスタントです。"
         "以下のファンダメンタルズ指標について、それぞれの数値が一般的にどう評価されるかを、"
@@ -57,12 +56,7 @@ def claude_commentary(api_key: str, ticker: str, per, pbr, roe, memo: str) -> st
         f"ROE: {roe if roe else '未入力'}%\n"
         f"投資家自身のメモ: {memo or '(なし)'}\n"
     )
-    message = client.messages.create(
-        model="claude-fable-5",
-        max_tokens=600,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    return message.content[0].text
+    return call_claude(api_key, prompt, max_tokens=600)
 
 
 def render_fundamentals_section(default_ticker: str = "7203.T") -> None:
@@ -98,8 +92,9 @@ def render_fundamentals_section(default_ticker: str = "7203.T") -> None:
         if api_key:
             try:
                 with st.spinner("Claudeが解説を作成しています..."):
-                    commentary = claude_commentary(api_key, ticker, per or None, pbr or None, roe or None, memo)
+                    commentary, model_used = claude_commentary(api_key, ticker, per or None, pbr or None, roe or None, memo)
                 st.write(commentary)
+                st.caption(f"生成モデル: {model_used}")
             except Exception as e:
                 st.warning(f"Claude APIの呼び出しに失敗したため、簡易解説を表示します（{e}）")
                 for line in rule_based_commentary(per or None, pbr or None, roe or None):
