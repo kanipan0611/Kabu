@@ -1,16 +1,18 @@
 """投資学習 & 財務管理ダッシュボード。
 
 タブ構成：
-  1. 📈 チャート     — インタラクティブ銘柄チャート・自動スコアリング
-  2. 💼 資産管理    — ポートフォリオ可視化・楽天証券CSV・ウォッチリスト
-  3. 🌱 新NISA     — 枠管理・複利シミュレーション
-  4. 🔬 分析ツール   — ファンダメンタルズ・投資シミュレーター
-  5. 🤖 仮想売買    — シグナル判定によるペーパートレード（実発注なし）
+  1. 🏠 ホーム       — 総資産・本日の損益・NISA進捗のダッシュボード
+  2. 📈 チャート     — インタラクティブ銘柄チャート・自動スコアリング
+  3. 💼 資産管理    — ポートフォリオ可視化・楽天証券CSV・ウォッチリスト
+  4. 🌱 新NISA     — 枠管理・複利シミュレーション
+  5. 🔬 分析ツール   — ファンダメンタルズ・投資シミュレーター
+  6. 🤖 仮想売買    — シグナル判定によるペーパートレード（実発注なし）
 """
 
 import streamlit as st
 
 from auto_trader import render_auto_trader_section
+from dashboard import render_dashboard
 from finance_planner import render_finance_sidebar
 from fundamentals import render_fundamentals_section
 from nisa_planner import render_nisa_section
@@ -23,6 +25,23 @@ st.set_page_config(page_title="Nest Egg — 投資学習ダッシュボード", 
 
 st.markdown(
     '<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">',
+    unsafe_allow_html=True,
+)
+
+# モバイル表示の最適化（余白を詰め、見出しを縮小）
+st.markdown(
+    """
+    <style>
+    @media (max-width: 640px) {
+        .block-container { padding: 1rem 0.75rem 2rem; }
+        h1 { font-size: 1.45rem !important; }
+        h2 { font-size: 1.2rem !important; }
+        h3 { font-size: 1.05rem !important; }
+        [data-testid="stMetricValue"] { font-size: 1.3rem; }
+        .stTabs [data-baseweb="tab"] { padding: 0.4rem 0.6rem; font-size: 0.85rem; }
+    }
+    </style>
+    """,
     unsafe_allow_html=True,
 )
 
@@ -46,9 +65,13 @@ with st.container(border=True):
 st.write("")
 
 # ── メインタブ ─────────────────────────────────────────────────
-tab_chart, tab_assets, tab_nisa, tab_analysis, tab_auto = st.tabs(
-    ["📈 チャート", "💼 資産管理", "🌱 新NISA", "🔬 分析ツール", "🤖 仮想売買"]
+tab_home, tab_chart, tab_assets, tab_nisa, tab_analysis, tab_auto = st.tabs(
+    ["🏠 ホーム", "📈 チャート", "💼 資産管理", "🌱 新NISA", "🔬 分析ツール", "🤖 仮想売買"]
 )
+
+with tab_home:
+    with st.container(border=True):
+        render_dashboard()
 
 with tab_chart:
     with st.container(border=True):

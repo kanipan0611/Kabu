@@ -8,6 +8,7 @@ import streamlit as st
 
 from secrets_utils import get_secret
 from stock_analysis import fetch_price_history, normalize_ticker
+from user_store import get_setting
 
 _DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
 _WATCHLIST_FILE = os.path.join(_DATA_DIR, "watchlist.json")
@@ -34,11 +35,31 @@ def get_watchlist() -> list[str]:
     return _load()
 
 
+def get_holding_codes() -> list[str]:
+    """資産管理タブで入力された保有株の銘柄コードを返す。"""
+    codes = []
+    for h in get_setting("holdings", []) or []:
+        code = str(h.get("銘柄コード") or "").strip()
+        if code and h.get("株数"):
+            codes.append(code)
+    return codes
+
+
+def get_monitored_tickers() -> list[str]:
+    """ウォッチリスト＋保有株の監視対象銘柄（重複なし・順序保持）を返す。"""
+    return list(dict.fromkeys(_load() + get_holding_codes()))
+
+
 def render_watchlist_section() -> None:
     st.header("👁️ ウォッチリスト")
-    st.caption("気になる銘柄を登録しておくと、現在値と前日比をまとめて確認できます。")
+    st.caption(
+        "気になる銘柄を登録しておくと、現在値と前日比をまとめて確認できます。"
+        "💼マークは保有株（資産管理タブで入力）で、自動的に表示されます。"
+    )
 
     tickers = _load()
+    holding_codes = get_holding_codes()
+    display_tickers = tickers + [c for c in holding_codes if c not in tickers]
 
     add_col, btn_col = st.columns([4, 1])
     with add_col:
@@ -56,12 +77,12 @@ def render_watchlist_section() -> None:
                 _save(tickers)
                 st.rerun()
 
-    if not tickers:
+    if not display_tickers:
         st.info("銘柄コードを入力して「＋ 追加」を押してください。")
         return
 
     rows = []
-    for ticker in tickers:
+    for ticker in display_tickers:
         try:
             df = fetch_price_history(ticker, "2d", "1d")
             df = df[df["Close"].notna()]
@@ -90,7 +111,7 @@ def render_watchlist_section() -> None:
         ticker = row["_ticker"]
         c1, c2, c3, c4, c5 = st.columns([3, 3, 2, 2, 1])
         with c1:
-            st.write(ticker)
+            st.write(f"💼 {ticker}" if ticker in holding_codes else ticker)
         with c2:
             p = row["現在値（円）"]
             st.write(f"¥{p:,.1f}" if p is not None else "取得失敗")
@@ -106,10 +127,11 @@ def render_watchlist_section() -> None:
                 sign = "+" if yen >= 0 else ""
                 st.write(f"{sign}{yen:,.1f}")
         with c5:
-            if st.button("✕", key=f"wl_del_{ticker}", help="削除"):
-                tickers.remove(ticker)
-                _save(tickers)
-                st.rerun()
+            if ticker in tickers:
+                if st.button("✕", key=f"wl_del_{ticker}", help="削除"):
+                    tickers.remove(ticker)
+                    _save(tickers)
+                    st.rerun()
 
     if st.button("🔄 データ更新", key="watchlist_refresh"):
         fetch_price_history.clear()
@@ -122,7 +144,7 @@ def render_watchlist_section() -> None:
             st.caption("ANTHROPIC_API_KEY が未設定のため生成できません。")
         else:
             lines = []
-            for ticker in tickers:
+            for ticker in display_tickers:
                 try:
                     df = fetch_price_history(ticker, "1mo", "1d")
                     df = df[df["Close"].notna()]

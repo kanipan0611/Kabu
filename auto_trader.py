@@ -17,7 +17,8 @@ import streamlit as st
 
 from scoring import compute_value_score
 from stock_analysis import add_indicators, fetch_fundamentals, fetch_price_history, normalize_ticker
-from watchlist import get_watchlist
+from user_store import get_setting, set_setting
+from watchlist import get_monitored_tickers
 
 _DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
 _STATE_FILE = os.path.join(_DATA_DIR, "paper_trading.json")
@@ -207,42 +208,60 @@ def render_auto_trader_section(safe_budget: float = 0.0) -> None:
         "自動売買の仕組み（シグナル・予算管理・損切り/利確）を、お金を賭けずに学ぶための機能です。"
     )
 
-    tickers = get_watchlist()
+    tickers = get_monitored_tickers()
     if not tickers:
-        st.info("まず「資産管理」タブのウォッチリストに銘柄を登録してください。対象銘柄はウォッチリストから読み込みます。")
+        st.info(
+            "まず「資産管理」タブのウォッチリストに銘柄を登録するか、保有株を入力してください。"
+            "対象銘柄はウォッチリストと保有株から自動的に読み込みます。"
+        )
         return
 
-    st.caption(f"対象銘柄（ウォッチリスト）: {', '.join(tickers)}")
+    st.caption(f"対象銘柄（ウォッチリスト＋保有株）: {', '.join(tickers)}")
 
-    # ── 設定 ──
+    # ── 設定（保存され、ヘッドレス実行 run_signals.py でも同じ値が使われる）──
+    saved_cfg = get_setting("paper_config", {})
     c1, c2, c3 = st.columns(3)
     with c1:
         budget = st.number_input(
-            "仮想予算（円）", min_value=10_000, value=max(int(safe_budget) * 12, 300_000),
+            "仮想予算（円）", min_value=10_000,
+            value=int(saved_cfg.get("budget", max(int(safe_budget) * 12, 300_000))),
             step=10_000, key="pt_budget",
             help="この金額の範囲内でのみ仮想売買を行います。",
         )
         per_trade_max = st.number_input(
-            "1銘柄あたりの上限（円）", min_value=10_000, value=100_000, step=10_000,
+            "1銘柄あたりの上限（円）", min_value=10_000,
+            value=int(saved_cfg.get("per_trade_max", 100_000)), step=10_000,
             key="pt_per_trade",
         )
     with c2:
-        stop_loss = st.slider("損切りライン（%下落で売却）", 3, 20, 8, key="pt_stop")
-        take_profit = st.slider("利確ライン（%上昇で売却）", 5, 50, 15, key="pt_profit")
+        stop_loss = st.slider("損切りライン（%下落で売却）", 3, 20,
+                              int(saved_cfg.get("stop_loss", 8)), key="pt_stop")
+        take_profit = st.slider("利確ライン（%上昇で売却）", 5, 50,
+                                int(saved_cfg.get("take_profit", 15)), key="pt_profit")
     with c3:
-        sma_short = st.number_input("短期移動平均(日)", 5, 60, 25, key="pt_sma_s")
-        sma_long = st.number_input("長期移動平均(日)", 20, 200, 75, key="pt_sma_l")
+        sma_short = st.number_input("短期移動平均(日)", 5, 60,
+                                    int(saved_cfg.get("sma_short", 25)), key="pt_sma_s")
+        sma_long = st.number_input("長期移動平均(日)", 20, 200,
+                                   int(saved_cfg.get("sma_long", 75)), key="pt_sma_l")
 
     use_fund = st.checkbox(
         "🧾 ファンダメンタルズフィルターを使う（PER/PBR/ROEのバリュー評価が低い銘柄は買わない）",
-        value=True, key="pt_use_fund",
+        value=bool(saved_cfg.get("use_fund", True)), key="pt_use_fund",
     )
     fundamental_min = None
     if use_fund:
         fundamental_min = st.slider(
-            "バリュー評価の最低ライン（点）", 0, 100, 40, key="pt_fund_min",
+            "バリュー評価の最低ライン（点）", 0, 100,
+            int(saved_cfg.get("fundamental_min", 40)), key="pt_fund_min",
             help="PER・PBR・ROEから算出する0〜100点の評価。40点未満は割高・低効率とみなして購入を見送ります。",
         )
+
+    set_setting("paper_config", {
+        "budget": budget, "per_trade_max": per_trade_max,
+        "stop_loss": stop_loss, "take_profit": take_profit,
+        "sma_short": int(sma_short), "sma_long": int(sma_long),
+        "use_fund": use_fund, "fundamental_min": fundamental_min if use_fund else 40,
+    })
 
     state = _load_state()
 

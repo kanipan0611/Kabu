@@ -558,7 +558,9 @@ def render_single_stock_panel(
     from scoring import render_auto_analysis
     render_auto_analysis(df, auto_fund["per"], auto_fund["pbr"], auto_fund["roe"], div_yield)
 
-    render_news_section(ticker, key_prefix)
+    # ニュースは取得に時間がかかるため、必要なときだけ読み込む（初期表示の高速化）
+    if st.toggle("📰 関連ニュース & 業界情報を表示", key=f"{key_prefix}_show_news"):
+        render_news_section(ticker, key_prefix)
 
     if show_fundamentals:
         st.markdown("**📋 財務指標（自動取得・比較用）**")
